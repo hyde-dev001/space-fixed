@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class CustomerController extends Controller
 {
@@ -58,12 +59,25 @@ class CustomerController extends Controller
         }
 
         // ── Aggregate orders per customer ──────────────────────────────────
+        $orderTotalParts = ['COALESCE(total_amount, 0)'];
+        if (Schema::hasColumn('orders', 'shipping_fee')) {
+            $orderTotalParts[] = 'COALESCE(shipping_fee, 0)';
+        }
+        if (Schema::hasColumn('orders', 'vat_amount')) {
+            $orderTotalParts[] = 'COALESCE(vat_amount, 0)';
+        }
+
+        $orderTotalExpression = '(' . implode(' + ', $orderTotalParts) . ')';
+        if (Schema::hasColumn('orders', 'grand_total')) {
+            $orderTotalExpression = "CASE WHEN COALESCE(grand_total, 0) > 0 THEN COALESCE(grand_total, 0) ELSE {$orderTotalExpression} END";
+        }
+
         $orderStats = Order::where('shop_owner_id', $shopId)
             ->whereIn('customer_id', $allCustomerIds)
             ->select(
                 'customer_id',
                 DB::raw('COUNT(*) as order_count'),
-                DB::raw('COALESCE(SUM(total_amount), 0) as order_spent'),
+                DB::raw("COALESCE(SUM({$orderTotalExpression}), 0) as order_spent"),
                 DB::raw('MAX(created_at) as last_order_at')
             )
             ->groupBy('customer_id')

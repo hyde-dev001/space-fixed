@@ -520,6 +520,12 @@ class RepairMaterialUsageApiTest extends TestCase
         $transaction = \App\Models\PosTransaction::query()->findOrFail($transactionId);
         $repair = RepairRequest::query()->findOrFail((int) $transaction->module_reference_id);
 
+        $this->assertSame('booking', $repair->material_plan_snapshot['source']);
+        $this->assertSame(2.0, $repair->materialPlanItems()->sole()->planned_quantity);
+        $this->assertSame(0.0, $repair->materialPlanItems()->sole()->actual_quantity);
+        $this->assertSame(12, (int) $material->fresh()->available_quantity);
+        $package->materialTemplateItems()->update(['default_quantity' => 9]);
+
         $this->assertSame((int) $package->id, (int) $repair->repair_package_id);
         $this->assertSame([$service->id], $repair->services()->pluck('repair_services.id')->all());
 

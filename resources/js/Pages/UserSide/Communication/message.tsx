@@ -68,6 +68,7 @@ interface OrderProductPreview {
   name: string;
   quantity: string;
   unitPrice?: string;
+  image?: string;
 }
 
 const Message: React.FC<Props> = ({ conversation: initialConversation = null, shopOwnerId }) => {
@@ -77,7 +78,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   // Check if user is still authenticated
   useEffect(() => {
     if (!auth?.user) {
-      router.visit('/user/login');
+      router.visit('/login');
     }
   }, [auth?.user]);
 
@@ -97,6 +98,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [orderStatusByNumber, setOrderStatusByNumber] = useState<Record<string, string>>({});
+  const [orderProductsByNumber, setOrderProductsByNumber] = useState<Record<string, OrderProductPreview[]>>({});
   const [lastMessageByConversationId, setLastMessageByConversationId] = useState<Record<number, string>>({});
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<ConversationMessage | null>(null);
@@ -150,7 +152,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch conversations:', response.status, response.statusText, errorText);
           if (response.status === 401) {
             console.log('Unauthorized - redirecting to login');
-            router.visit('/user/login');
+      router.visit('/login');
           }
           setIsLoading(false);
           return;
@@ -261,7 +263,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch messages:', response.status, response.statusText);
         }
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -369,10 +371,19 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       const data = await response.json();
       const orders = Array.isArray(data?.orders) ? data.orders : [];
       const nextMap: Record<string, string> = {};
+      const nextProductsMap: Record<string, OrderProductPreview[]> = {};
 
       orders.forEach((order: any) => {
         const orderNumber = String(order?.order_number || '').trim().toUpperCase();
         if (!orderNumber) return;
+
+        nextProductsMap[orderNumber] = Array.isArray(order.items)
+          ? order.items.map((item: { product_name: string; quantity: number; product_image?: string | null }) => ({
+              name: item.product_name,
+              quantity: String(item.quantity),
+              image: item.product_image || undefined,
+            }))
+          : [];
 
         const rawStatus = order?.status;
         const normalizedStatus = typeof rawStatus === 'object' && rawStatus !== null
@@ -385,6 +396,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       });
 
       setOrderStatusByNumber(nextMap);
+      setOrderProductsByNumber(nextProductsMap);
     } catch (error) {
       if (!silent) {
         console.error('Failed to fetch order statuses:', error);
@@ -419,7 +431,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to create conversation:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -480,7 +492,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to send message:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -651,7 +663,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       );
     }
 
-    const bgClass = tone === 'customer' ? 'bg-gray-900 text-white' : 'bg-blue-100 text-blue-700';
+    const bgClass = 'bg-gray-950 text-white';
 
     return (
       <div className={`w-7 h-7 rounded-full ${bgClass} flex items-center justify-center text-[11px] font-semibold`}>
@@ -1016,6 +1028,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   if (message.sender_type === 'system') {
                     // Parse message content to extract details
                     const content = message.content || '';
+                    const isOrderReport = content.includes('**Order Report Submitted**');
                     const isRepairMessage = content.includes('Repair') || content.includes('Type:**');
                     const isOrderMessage = content.includes('Order') && (content.includes('Order Number:') || content.includes('New Order Placed'));
                     
@@ -1038,6 +1051,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     const items = itemsMatch ? itemsMatch[1].trim() : '';
                     const total = totalMatch ? totalMatch[1].trim() : '';
                     const orderStatus = orderStatusMatch ? orderStatusMatch[1].trim() : '';
+                    const reportReasonMatch = content.match(/\*\*Reason:\*\*\s*(.+?)(?=\n|$)/);
+                    const reportReason = reportReasonMatch ? reportReasonMatch[1].trim() : '';
                     const normalizedMessageOrderNumber = (orderNumber || '').trim().toUpperCase();
                     const normalizedConversationOrderNumber = (selectedConversation?.order?.order_number || '').trim().toUpperCase();
                     const isSameOrderAsConversation =
@@ -1051,11 +1066,13 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     const mappedOrderStatus = normalizedMessageOrderNumber
                       ? (orderStatusByNumber[normalizedMessageOrderNumber] || '')
                       : '';
-                    const effectiveOrderStatus =
+                    const effectiveOrderStatus = isOrderReport ? orderStatus.replace(/^Pending dispatcher investigation$/i, 'Pending') :
                       (mappedOrderStatus ? mappedOrderStatus.replace(/_/g, ' ') : '') ||
                       liveOrderStatus ||
                       orderStatus;
-                    const orderProducts = parseOrderProducts(content, items);
+                    const orderProducts = isOrderReport
+                      ? (orderProductsByNumber[normalizedMessageOrderNumber] || [])
+                      : parseOrderProducts(content, items);
                     const orderProductImages = (message.attachments || []).filter((attachment): attachment is string => typeof attachment === 'string' && attachment.length > 0);
                     
                     // Determine status badge color
@@ -1081,7 +1098,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             <div className="flex items-start justify-between mb-4">
                               <div className="flex-1">
                                 <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                                  <span>New Order Placed</span>
+                                  <span>{isOrderReport ? 'Order Report Submitted' : 'New Order Placed'}</span>
                                 </h3>
                                 <p className="text-xs text-gray-500">
                                   {new Date(message.created_at).toLocaleString('en-US', {
@@ -1102,12 +1119,24 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             
                             {/* Order Details Section */}
                             <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                              {isOrderReport && (
+                                <>
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Order Number:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{orderNumber}</span>
+                                  </div>
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Reason:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{reportReason}</span>
+                                  </div>
+                                </>
+                              )}
                               {orderProducts.length > 0 && (
                                 <div className="space-y-2">
                                   <span className="text-gray-500 text-xs font-medium">Products:</span>
                                   <div className="space-y-2">
                                     {orderProducts.map((product, productIndex) => {
-                                      const productImage = orderProductImages[productIndex];
+                                      const productImage = isOrderReport ? product.image : orderProductImages[productIndex];
 
                                       return (
                                         <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
@@ -1184,7 +1213,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             {/* Footer message */}
                             <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
                               <p className="text-xs text-blue-900 leading-relaxed">
-                                💡 Thank you for your order! We'll notify you once your items are ready for shipment.
+                                {isOrderReport
+                                  ? 'Your order report has been received. The dispatcher will investigate the issue.'
+                                  : "💡 Thank you for your order! We'll notify you once your items are ready for shipment."}
                               </p>
                             </div>
                             
@@ -1323,8 +1354,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             )}
                             
                             {/* Footer message */}
-                            <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                              <p className="text-xs text-blue-900 leading-relaxed">
+                            <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                              <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">
                                 {content.includes('bring your item') 
                                   ? '💡 Please bring your item to our shop at your convenience.' 
                                   : '💡 We\'ll keep you updated on the progress of your repair.'}
@@ -1699,7 +1730,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
       {fullscreenImage && (
         <div
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/25 backdrop-blur-md flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button

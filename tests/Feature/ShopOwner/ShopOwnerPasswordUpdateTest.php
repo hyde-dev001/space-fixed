@@ -33,6 +33,22 @@ class ShopOwnerPasswordUpdateTest extends TestCase
     }
 
     #[Test]
+    public function shop_owner_password_requires_at_least_twelve_characters(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create([
+            'password' => Hash::make('CurrentPass1!'),
+        ]);
+
+        $response = $this->actingAs($owner, 'shop_owner')->post('/shop-owner/shop-profile/password', [
+            'current_password' => 'CurrentPass1!',
+            'password' => 'NewStrong1!',
+            'password_confirmation' => 'NewStrong1!',
+        ]);
+
+        $response->assertSessionHasErrors('password');
+    }
+
+    #[Test]
     public function shop_owner_password_route_is_throttled_after_five_attempts(): void
     {
         $owner = ShopOwner::factory()->approved()->create([

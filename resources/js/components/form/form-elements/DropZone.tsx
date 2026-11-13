@@ -1,11 +1,19 @@
 import { useDropzone } from "react-dropzone";
+import { displayUploadFileName } from '@/utils/uploadFileName';
 
 interface DropzoneProps {
   onDrop?: (acceptedFiles: File[]) => void;
+  inputId?: string;
+  inputAriaLabel?: string;
   isUploaded?: boolean;
+  isExistingFile?: boolean;
   fileName?: string;
   previewUrl?: string;
   previewAlt?: string;
+  previewFit?: 'cover' | 'contain';
+  uploadedLabel?: string;
+  compact?: boolean;
+  uploadLabel?: string;
   accept?: {
     [mimeType: string]: string[];
   };
@@ -18,10 +26,27 @@ const defaultAccept = {
   "application/pdf": [".pdf"],
 };
 
-const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false, fileName, previewUrl, previewAlt, accept, onInvalidFiles }) => {
-  const handleDrop = (acceptedFiles: File[], fileRejections: Array<{ file: File }>) => {
-    console.log("Files dropped:", acceptedFiles);
+const DropzoneComponent: React.FC<DropzoneProps> = ({
+  onDrop,
+  inputId,
+  inputAriaLabel,
+  isUploaded = false,
+  isExistingFile = false,
+  fileName,
+  previewUrl,
+  previewAlt,
+  previewFit = 'cover',
+  uploadedLabel = 'File Uploaded Successfully!',
+  compact = false,
+  uploadLabel = 'Upload document',
+  accept,
+  onInvalidFiles,
+}) => {
+  const showUploadedState = isUploaded && !isExistingFile;
+  const displayFileName = displayUploadFileName(fileName);
+  const fileNameTitle = displayFileName && displayFileName.length <= 160 ? displayFileName : undefined;
 
+  const handleDrop = (acceptedFiles: File[], fileRejections: Array<{ file: File }>) => {
     if (fileRejections.length > 0 && onInvalidFiles) {
       onInvalidFiles(fileRejections.map((entry) => entry.file));
     }
@@ -37,41 +62,57 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false
   });
 
   return (
-    <div className={`transition border border-dashed cursor-pointer rounded-xl ${
-      isUploaded 
-        ? "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/20" 
-        : "border-gray-300 dark:border-gray-700 hover:border-brand-500 dark:hover:border-brand-500"
+    <div className={`min-w-0 max-w-full overflow-hidden focus-within:ring-2 focus-within:ring-inset focus-within:ring-gray-950 dark:focus-within:ring-gray-300 transition border border-dashed cursor-pointer rounded-xl ${
+      compact
+        ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+        : showUploadedState
+          ? "border-green-500 bg-green-50 dark:border-green-500 dark:bg-green-900/20"
+        : "border-gray-300 dark:border-gray-700 hover:border-gray-950 dark:hover:border-gray-300"
     }`}>
       <div
         {...getRootProps()}
-        className={`dropzone rounded-xl border-dashed p-7 lg:p-10 ${
-          isUploaded
-            ? "border-green-500 bg-green-50 dark:bg-green-900/20"
-            : isDragActive
-            ? "border-brand-500 bg-gray-100 dark:bg-gray-800"
-            : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+        className={`dropzone rounded-xl border-dashed ${
+          compact
+            ? `flex min-h-[208px] items-center justify-center p-4 sm:min-h-[208px] sm:p-5 ${
+                isDragActive
+                  ? "border-gray-950 bg-gray-100 dark:border-gray-300 dark:bg-gray-800"
+                  : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+              }`
+            : `p-7 lg:p-10 ${
+                showUploadedState
+                  ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                  : isDragActive
+                  ? "border-gray-950 bg-gray-100 dark:border-gray-300 dark:bg-gray-800"
+                  : "border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
+              }`
         }`}
-        id="demo-upload"
+        id={inputId ? `${inputId}-dropzone` : 'demo-upload'}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps()} id={inputId} aria-label={inputAriaLabel} />
 
-        <div className="dz-message flex flex-col items-center m-0!">
-          <div className="mb-[22px] flex justify-center">
-            {previewUrl ? (
-              <div className="flex h-[88px] w-[88px] items-center justify-center overflow-hidden rounded-2xl border border-green-200 bg-white shadow-sm">
+        <div className="dz-message flex min-w-0 w-full flex-col items-center m-0!">
+          <div className={`${compact ? 'mb-3' : 'mb-[22px]'} flex w-full justify-center`}>
+            {showUploadedState && previewUrl ? (
+              <div className={`flex items-center justify-center overflow-hidden border bg-white shadow-sm ${
+                compact
+                  ? 'h-24 w-full max-w-[176px] rounded-lg border-gray-200'
+                  : `h-[88px] w-[88px] rounded-2xl ${showUploadedState ? 'border-green-200' : 'border-gray-200'}`
+              }`}>
                 <img
                   src={previewUrl}
-                  alt={previewAlt || fileName || 'Uploaded preview'}
-                  className="h-full w-full object-cover"
+                  alt={previewAlt || displayFileName || 'Uploaded preview'}
+                  className={`h-full w-full ${compact || previewFit === 'contain' ? 'object-contain' : 'object-cover'}`}
                 />
               </div>
             ) : (
-              <div className={`flex h-[68px] w-[68px] items-center justify-center rounded-full ${
-                isUploaded
+              <div className={`flex items-center justify-center rounded-full ${
+                compact ? 'h-12 w-12' : 'h-[68px] w-[68px]'
+              } ${
+                showUploadedState
                   ? "bg-green-100 text-green-600 dark:bg-green-800 dark:text-green-300"
                   : "bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-400"
               }`}>
-                {isUploaded ? (
+                {showUploadedState ? (
                   <svg className="fill-current" width="29" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
                   </svg>
@@ -88,23 +129,41 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({ onDrop, isUploaded = false
             )}
           </div>
 
-          <h4 className={`mb-3 font-semibold text-theme-xl ${
-            isUploaded 
-              ? "text-green-600 dark:text-green-400" 
-              : "text-gray-800 dark:text-white/90"
-          }`}>
-            {isUploaded ? "File Uploaded Successfully!" : isDragActive ? "Drop Files Here" : "Drag & Drop Documents Here"}
-          </h4>
+          {compact ? (
+            <>
+              {showUploadedState && displayFileName && (
+                <p className="mb-2 w-full max-w-[176px] truncate text-center text-xs font-medium text-gray-700 dark:text-gray-200" title={fileNameTitle}>{displayFileName}</p>
+              )}
+              {!showUploadedState && (
+                <h4 className="mb-2 text-sm font-semibold text-gray-800 dark:text-white/90">
+                  {isDragActive ? 'Drop image here' : uploadLabel}
+                </h4>
+              )}
+              <span className="inline-flex min-h-11 items-center justify-center px-2 text-xs font-medium text-gray-950 underline dark:text-gray-200">
+                {showUploadedState ? 'Change File' : 'Browse file'}
+              </span>
+            </>
+          ) : (
+            <>
+              <h4 className={`mb-3 font-semibold text-theme-xl ${
+                showUploadedState
+                  ? "text-green-600 dark:text-green-400"
+                  : "text-gray-800 dark:text-white/90"
+              }`}>
+                {showUploadedState ? uploadedLabel : isDragActive ? "Drop Files Here" : "Drag & Drop Documents Here"}
+              </h4>
 
-          {isUploaded && fileName && (
-            <p className="text-sm text-green-600 dark:text-green-400 mb-2 font-medium">{fileName}</p>
+              {showUploadedState && displayFileName && (
+                <p title={fileNameTitle} className={`min-w-0 w-full max-w-full truncate text-center text-sm mb-2 font-medium ${showUploadedState ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-200'}`}>{displayFileName}</p>
+              )}
+
+              <span className={`font-medium underline text-theme-sm ${
+                showUploadedState ? "text-green-600 dark:text-green-400" : "text-gray-950 dark:text-gray-200"
+              }`}>
+                {showUploadedState ? "Change File" : "Browse File"}
+              </span>
+            </>
           )}
-
-          <span className={`font-medium underline text-theme-sm ${
-            isUploaded ? "text-green-600 dark:text-green-400" : "text-brand-500"
-          }`}>
-            {isUploaded ? "Change File" : "Browse File"}
-          </span>
         </div>
       </div>
     </div>

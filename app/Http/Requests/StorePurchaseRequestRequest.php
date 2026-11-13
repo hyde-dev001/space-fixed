@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StorePurchaseRequestRequest extends FormRequest
 {
@@ -21,11 +22,30 @@ class StorePurchaseRequestRequest extends FormRequest
      */
     public function rules(): array
     {
+        $shopOwnerId = (int) $this->user()->shop_owner_id;
+        $stockRequestUnique = Rule::unique('purchase_requests', 'stock_request_id');
+        if ($this->route('id')) {
+            $stockRequestUnique->ignore((int) $this->route('id'));
+        }
+
         return [
-            'stock_request_id' => 'nullable|integer|exists:stock_request_approvals,id',
+            'stock_request_id' => [
+                'required',
+                'integer',
+                Rule::exists('stock_request_approvals', 'id')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where('status', 'accepted'),
+                $stockRequestUnique,
+            ],
             'product_name' => 'required|string|max:255',
-            'supplier_id' => 'required|exists:suppliers,id',
-            'inventory_item_id' => 'nullable|exists:inventory_items,id',
+            'supplier_id' => [
+                'required',
+                Rule::exists('suppliers', 'id')
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at'),
+            ],
+            'inventory_item_id' => ['nullable', Rule::exists('inventory_items', 'id')->where('shop_owner_id', $shopOwnerId)],
             'requested_size' => 'nullable|string|max:20',
             'requested_color' => 'nullable|string|max:50',
             'quantity' => 'required|integer|min:1',
@@ -44,6 +64,8 @@ class StorePurchaseRequestRequest extends FormRequest
     {
         return [
             'stock_request_id.exists' => 'Selected stock request no longer exists.',
+            'stock_request_id.required' => 'An accepted stock request is required.',
+            'stock_request_id.unique' => 'This stock request already has a purchase request.',
             'product_name.required' => 'Product name is required.',
             'supplier_id.required' => 'Supplier is required.',
             'supplier_id.exists' => 'Selected supplier does not exist.',

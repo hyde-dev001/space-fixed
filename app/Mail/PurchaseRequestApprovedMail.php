@@ -49,7 +49,7 @@ class PurchaseRequestApprovedMail extends Mailable
                 'approver' => $this->purchaseRequest->approver?->name ?? 'Finance Team',
                 'approvedDate' => $this->purchaseRequest->approved_date,
                 'notes' => $this->purchaseRequest->notes,
-                'viewUrl' => url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id),
+                'viewUrl' => url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id),
             ],
         );
     }

@@ -1,0 +1,155 @@
+<?php
+
+namespace App\Models\Finance;
+
+use App\Models\ShopOwner;
+use App\Models\SupplierAdjustment;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+
+class ExpenseSettlement extends Model
+{
+    public const ENTRY_SETTLEMENT = 'settlement';
+    public const ENTRY_REVERSAL = 'reversal';
+    public const ENTRY_SUPPLIER_REFUND = 'supplier_refund';
+    public const SOURCE_MANUAL = 'manual';
+    public const SOURCE_PROCUREMENT = 'procurement';
+    public const SOURCE_PAYROLL = 'payroll';
+    public const SOURCE_LEGACY_MIGRATION = 'legacy_migration';
+    public const SOURCE_SUPPLIER_MANUAL_PAYMENT = 'supplier_manual_payment';
+    public const SOURCE_SUPPLIER_XENDIT_PAYOUT = 'supplier_xendit_payout';
+    public const SOURCE_SUPPLIER_XENDIT_REVERSAL = 'supplier_xendit_reversal';
+    public const SOURCE_SUPPLIER_REFUND = 'supplier_refund';
+
+    protected $table = 'finance_expense_settlements';
+
+    protected $fillable = [
+        'shop_owner_id',
+        'expense_id',
+        'entry_type',
+        'amount',
+        'payment_method',
+        'reference',
+        'paid_at',
+        'recorded_by_user_id',
+        'idempotency_key',
+        'reverses_settlement_id',
+        'reversal_reason',
+        'source',
+        'source_reference',
+        'supplier_adjustment_id',
+        'notes',
+    ];
+
+    protected $casts = [
+        'amount' => 'decimal:2',
+        'paid_at' => 'datetime',
+    ];
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $settlement): void {
+            if ($settlement->exists) {
+                throw new \LogicException('Finance settlement history is append-only.');
+            }
+        });
+
+        static::deleting(function (self $settlement): void {
+            if ($settlement->exists) {
+                throw new \LogicException('Finance settlement history is append-only.');
+            }
+        });
+    }
+
+    public function expense()
+    {
+        return $this->belongsTo(Expense::class, 'expense_id');
+    }
+
+    public function shopOwner()
+    {
+        return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
+    }
+
+    public function recordedBy()
+    {
+        return $this->belongsTo(User::class, 'recorded_by_user_id');
+    }
+
+    public function reversedSettlement()
+    {
+        return $this->belongsTo(self::class, 'reverses_settlement_id');
+    }
+
+    public function reversal()
+    {
+        return $this->hasOne(self::class, 'reverses_settlement_id');
+    }
+
+    public function supplierAdjustment()
+    {
+        return $this->belongsTo(SupplierAdjustment::class, 'supplier_adjustment_id');
+    }
+
+    public function scopeSettlements(Builder $query): Builder
+    {
+        return $query->where('entry_type', self::ENTRY_SETTLEMENT);
+    }
+
+    public function scopeSupplierRefunds(Builder $query): Builder
+    {
+        return $query->where('entry_type', self::ENTRY_SUPPLIER_REFUND);
+    }
+
+    public static function validRefundedAmountForAdjustment(int $adjustmentId): string
+    {
+        $totalCents = static::query()
+            ->where('supplier_adjustment_id', $adjustmentId)
+            ->where('entry_type', self::ENTRY_SUPPLIER_REFUND)
+            ->get(['amount'])
+            ->sum(fn (self $row): int => self::toCents($row->amount));
+
+        return self::fromCents(max(0, $totalCents));
+    }
+
+    public static function validSettledAmountForExpense(int $expenseId): string
+    {
+        $rows = static::query()->where('expense_id', $expenseId)
+            ->get(['id', 'entry_type', 'amount', 'reverses_settlement_id']);
+        $totalCents = 0;
+
+        foreach ($rows as $row) {
+            $cents = self::toCents($row->amount);
+            if ((string) $row->entry_type === self::ENTRY_SETTLEMENT) {
+                $totalCents += $cents;
+            } elseif ((string) $row->entry_type === self::ENTRY_REVERSAL && $row->reverses_settlement_id) {
+                $totalCents -= $cents;
+            }
+        }
+
+        return self::fromCents(max(0, $totalCents));
+    }
+
+    private static function toCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^-?\d+(?:\.\d{1,2})?$/', $text)) {
+            return 0;
+        }
+        $negative = str_starts_with($text, '-');
+        $text = ltrim($text, '+-');
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+        $cents = ((int) $whole * 100) + (int) str_pad(substr($fraction, 0, 2), 2, '0');
+
+        return $negative ? -$cents : $cents;
+    }
+
+    private static function fromCents(int $cents): string
+    {
+        $sign = $cents < 0 ? '-' : '';
+        $absolute = abs($cents);
+
+        return $sign . intdiv($absolute, 100) . '.' . str_pad((string) ($absolute % 100), 2, '0', STR_PAD_LEFT);
+    }
+}

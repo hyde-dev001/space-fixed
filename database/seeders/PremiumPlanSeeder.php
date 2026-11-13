@@ -20,6 +20,10 @@ class PremiumPlanSeeder extends Seeder
                 'price' => 249,
                 'duration_days' => 15,
                 'showroom_slot_limit' => 48,
+                'benefits' => [
+                    'View shoes in horizontal detail inside the showroom',
+                    'Enable image-sequence uploads for showroom presentation',
+                ],
                 'status' => 'active',
             ],
             [
@@ -29,6 +33,10 @@ class PremiumPlanSeeder extends Seeder
                 'price' => 399,
                 'duration_days' => 30,
                 'showroom_slot_limit' => 60,
+                'benefits' => [
+                    'View shoes in horizontal detail inside the showroom',
+                    'Enable image-sequence uploads for showroom presentation',
+                ],
                 'status' => 'active',
             ],
             [
@@ -38,6 +46,10 @@ class PremiumPlanSeeder extends Seeder
                 'price' => 599,
                 'duration_days' => 30,
                 'showroom_slot_limit' => 84,
+                'benefits' => [
+                    'View shoes in horizontal detail inside the showroom',
+                    'Enable image-sequence uploads for showroom presentation',
+                ],
                 'status' => 'active',
             ],
         ];

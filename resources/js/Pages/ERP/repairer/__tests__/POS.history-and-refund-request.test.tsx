@@ -55,11 +55,29 @@ describe("repairPosHistoryApi", () => {
     );
   });
 
-  it("posts warranty claim payload as multipart form data", async () => {
+  it("posts the cashier-only manual refund action for a rejected no-account repair", async () => {
     postMock.mockResolvedValue({ data: { success: true } });
 
     const { repairPosHistoryApi } = await import("../../../../services/repairPosHistoryApi");
-    const file = new File(["proof"], "proof.jpg", { type: "image/jpeg" });
+    await repairPosHistoryApi.manualRefundRejectedNoAccount({
+      source_transaction_id: 88,
+      receipt_no: "RCPT-TEST-001",
+    });
+
+    expect(postMock).toHaveBeenCalledWith(
+      "/api/repair-pos/refunds/manual-rejected-no-account",
+      {
+        source_transaction_id: 88,
+        receipt_no: "RCPT-TEST-001",
+      },
+      { withCredentials: true },
+    );
+  });
+
+  it("posts warranty claim payload without evidence images", async () => {
+    postMock.mockResolvedValue({ data: { success: true } });
+
+    const { repairPosHistoryApi } = await import("../../../../services/repairPosHistoryApi");
 
     await repairPosHistoryApi.requestWarrantyClaim({
       repair_request_id: 321,
@@ -68,23 +86,20 @@ describe("repairPosHistoryApi", () => {
       reason_code: "issue_returned",
       reason_details: "Issue returned after pickup.",
       preferred_return_method: "walk_in",
-      images: [file],
     });
 
     const [url, body, config] = postMock.mock.calls[0];
 
     expect(url).toBe("/api/repair-pos/warranty-claims");
-    expect(body).toBeInstanceOf(FormData);
-    expect((body as FormData).get("repair_request_id")).toBe("321");
-    expect((body as FormData).get("receipt_no")).toBe("RCP-2001");
-    expect((body as FormData).get("walk_in_phone")).toBe("09171234567");
-    expect((body as FormData).get("reason_code")).toBe("issue_returned");
-    expect((body as FormData).get("same_issue_confirmation")).toBe("1");
-    expect(config).toEqual({
-      withCredentials: true,
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
+    expect(body).toEqual({
+      repair_request_id: 321,
+      receipt_no: "RCP-2001",
+      walk_in_phone: "09171234567",
+      reason_code: "issue_returned",
+      reason_details: "Issue returned after pickup.",
+      preferred_return_method: "walk_in",
+      same_issue_confirmation: "1",
     });
+    expect(config).toEqual({ withCredentials: true });
   });
 });

@@ -2,12 +2,16 @@
 
 namespace App\Notifications;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class ShopOwnerRejected extends Notification
+class ShopOwnerRejected extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
 
     protected $shopOwner;
@@ -20,6 +24,7 @@ class ShopOwnerRejected extends Notification
     {
         $this->shopOwner = $shopOwner;
         $this->rejectionReason = $rejectionReason;
+        $this->afterCommit = true;
     }
 
     /**
@@ -55,9 +60,7 @@ class ShopOwnerRejected extends Notification
             $message->line('**Reason for rejection:** ' . $this->rejectionReason);
         }
 
-        $message->line('**Resubmission policy:** You can resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times after rejection.')
-            ->line('**Attempts used:** ' . $usedAttempts . ' / ' . self::MAX_RESUBMISSION_ATTEMPTS)
-            ->line('**Attempts remaining:** ' . $remainingAttempts);
+        $message->line('**Resubmission policy:** You can resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times after rejection.');
 
         if ($remainingAttempts > 0) {
             $message->line('You can review your previous submission and resubmit your application after updating your details or replacing/additional documents.')

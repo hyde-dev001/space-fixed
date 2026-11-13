@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\RepairPackage;
 
+use App\Models\Employee;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
@@ -10,6 +11,8 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class RepairPackageApiTest extends TestCase
@@ -73,9 +76,40 @@ class RepairPackageApiTest extends TestCase
         ], $overrides));
     }
 
-    public function test_shop_owner_can_create_repair_package_with_own_services(): void
+    public function test_rejected_package_price_can_be_requested_again_without_losing_the_approved_price(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
+        $this->withoutMiddleware();
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $repairer = User::factory()->create(['shop_owner_id' => $shop->id]);
+
+        foreach (['finance_rejected' => 1200, 'owner_rejected' => 1100] as $status => $proposedPrice) {
+            $package = RepairPackage::create([
+                'shop_owner_id' => $shop->id,
+                'name' => 'Repair bundle',
+                'status' => 'active',
+                'package_price' => 1200,
+                'old_package_price' => 1000,
+                'approval_status' => $status,
+            ]);
+
+            $this->actingAs($repairer, 'user')->putJson('/api/repair-packages/'.$package->id, [
+                'package_price' => $proposedPrice,
+                'reason' => 'Revised request',
+            ])->assertStatus(202);
+
+            $package->refresh();
+            $this->assertSame('pending_finance', $package->approval_status);
+            $this->assertEquals(1000, $package->old_package_price);
+            $this->assertEquals($proposedPrice, $package->package_price);
+        }
+    }
+
+    public function test_shop_owner_repair_package_management_is_read_only(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
         $material = $this->createRepairMaterial($shopOwner);
@@ -96,30 +130,25 @@ class RepairPackageApiTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(201)
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.name', 'Starter Restore Bundle');
+        $response->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair package management is read-only.');
 
-        $this->assertDatabaseHas('repair_packages', [
+        $this->assertDatabaseMissing('repair_packages', [
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Starter Restore Bundle',
         ]);
-
-        $packageId = $response->json('data.id');
-        $this->assertDatabaseHas('repair_package_service', [
-            'repair_package_id' => $packageId,
-            'repair_service_id' => $s1->id,
-        ]);
-        $this->assertDatabaseHas('repair_package_service', [
-            'repair_package_id' => $packageId,
-            'repair_service_id' => $s2->id,
-        ]);
     }
 
-    public function test_shop_owner_cannot_include_other_shop_services_in_package(): void
+    public function test_shop_owner_cannot_create_any_repair_package(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
-        $otherShopOwner = ShopOwner::factory()->approved()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
+        $otherShopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
 
         $ownService = $this->createService($shopOwner, ['name' => 'Own Service']);
         $foreignService = $this->createService($otherShopOwner, ['name' => 'Foreign Service']);
@@ -139,17 +168,176 @@ class RepairPackageApiTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('success', false)
-            ->assertJsonStructure(['errors' => ['service_ids']]);
+        $response->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair package management is read-only.');
 
-        $failedPackage = RepairPackage::withTrashed()
-            ->where('shop_owner_id', $shopOwner->id)
-            ->where('name', 'Invalid Mixed Package')
-            ->first();
+        $this->assertDatabaseMissing('repair_packages', [
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Invalid Mixed Package',
+        ]);
+    }
 
-        $this->assertNotNull($failedPackage);
-        $this->assertNotNull($failedPackage->deleted_at);
+    public function test_individual_repair_shop_owner_can_create_repair_package(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
+        $material = $this->createRepairMaterial($shopOwner);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson('/api/repair-packages', [
+                'name' => 'Individual Restore Bundle',
+                'description' => 'Includes two services',
+                'package_price' => 1000,
+                'duration' => '2 to 3 hours',
+                'status' => 'active',
+                'service_ids' => [$s1->id, $s2->id],
+                'material_templates' => [[
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ]],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Individual Restore Bundle')
+            ->assertJsonPath('data.duration', '2 to 3 hours');
+
+        $this->assertDatabaseHas('repair_packages', [
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Individual Restore Bundle',
+            'duration' => '2 to 3 hours',
+        ]);
+    }
+
+    public function test_repair_package_image_is_scoped_and_exposed_as_a_public_url(): void
+    {
+        Storage::fake('public');
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean']);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue']);
+        $material = $this->createRepairMaterial($shopOwner);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->post('/api/repair-packages', [
+            'name' => 'Image Package',
+            'description' => 'Package with a cover image',
+            'package_price' => 900,
+            'duration' => '2 to 3 hours',
+            'status' => 'active',
+            'service_ids' => [$s1->id, $s2->id],
+            'material_templates' => [[
+                'inventory_item_id' => $material->id,
+                'default_quantity' => 1,
+            ]],
+            'image' => UploadedFile::fake()->create('restore-package.jpg', 100, 'image/jpeg'),
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonMissingPath('data.image_path');
+
+        $package = RepairPackage::query()->where('name', 'Image Package')->firstOrFail();
+        $this->assertStringStartsWith("repair-packages/{$shopOwner->id}/", $package->image_path);
+        Storage::disk('public')->assertExists($package->image_path);
+        $response->assertJsonPath('data.image_url', Storage::disk('public')->url($package->image_path));
+    }
+
+    public function test_repair_package_image_can_be_replaced_and_removed_by_the_same_shop(): void
+    {
+        Storage::fake('public');
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean']);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue']);
+        $material = $this->createRepairMaterial($shopOwner);
+        $oldPath = UploadedFile::fake()->create('old-package.jpg', 100, 'image/jpeg')->store("repair-packages/{$shopOwner->id}", 'public');
+        $package = RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Editable Package',
+            'package_price' => 900,
+            'status' => 'active',
+            'image_path' => $oldPath,
+        ]);
+        $package->syncIncludedServices([$s1->id, $s2->id]);
+
+        $replaceResponse = $this->actingAs($shopOwner, 'shop_owner')->post("/api/repair-packages/{$package->id}", [
+            '_method' => 'PUT',
+            'material_templates' => [['inventory_item_id' => $material->id, 'default_quantity' => 1]],
+            'image' => UploadedFile::fake()->create('new-package.webp', 100, 'image/webp'),
+        ]);
+
+        $replaceResponse->assertOk()->assertJsonMissingPath('data.image_path');
+        $replacementPath = $package->fresh()->image_path;
+        $this->assertNotSame($oldPath, $replacementPath);
+        Storage::disk('public')->assertMissing($oldPath);
+        Storage::disk('public')->assertExists($replacementPath);
+
+        $removeResponse = $this->actingAs($shopOwner, 'shop_owner')->post("/api/repair-packages/{$package->id}", [
+            '_method' => 'PUT',
+            'material_templates' => [['inventory_item_id' => $material->id, 'default_quantity' => 1]],
+            'remove_image' => '1',
+        ]);
+
+        $removeResponse->assertOk()->assertJsonPath('data.image_url', null);
+        $this->assertNull($package->fresh()->image_path);
+        Storage::disk('public')->assertMissing($replacementPath);
+    }
+
+    public function test_individual_repair_shop_owner_can_update_package_price_without_changing_booking_snapshot(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $customer = User::factory()->create();
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
+        $material = $this->createRepairMaterial($shopOwner);
+        $package = RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Individual Restore Bundle',
+            'package_price' => 1000,
+            'status' => 'active',
+            'approval_status' => 'none',
+        ]);
+        $package->syncIncludedServices([$s1->id, $s2->id]);
+        $booking = $this->createPackageBooking($customer, $shopOwner, $package, [
+            'package_price' => 1000,
+            'final_total' => 1000,
+            'total' => 1000,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->putJson("/api/repair-packages/{$package->id}", [
+                'name' => $package->name,
+                'description' => $package->description,
+                'duration' => '3 days',
+                'package_price' => 1250,
+                'status' => 'active',
+                'service_ids' => [$s1->id, $s2->id],
+                'material_templates' => [[
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                ]],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.package_price', '1250.00');
+
+        $this->assertDatabaseHas('repair_packages', [
+            'id' => $package->id,
+            'package_price' => 1250,
+            'duration' => '3 days',
+            'approval_status' => 'finalized',
+        ]);
+        $this->assertSame(1000.0, (float) $booking->fresh()->package_price);
+        $this->assertSame(1000.0, (float) $booking->fresh()->final_total);
     }
 
     public function test_shop_owner_cannot_access_other_shop_package(): void
@@ -234,6 +422,7 @@ class RepairPackageApiTest extends TestCase
             'shop_owner_id' => $shopA->id,
             'name' => 'Active A',
             'package_price' => 900,
+            'duration' => '1 day',
             'status' => 'active',
         ]);
         $activeA->syncIncludedServices([$a1->id, $a2->id]);
@@ -263,6 +452,7 @@ class RepairPackageApiTest extends TestCase
         $this->assertContains('Active A', $names);
         $this->assertNotContains('Inactive A', $names);
         $this->assertNotContains('Active B', $names);
+        $this->assertSame('1 day', collect($response->json('data'))->firstWhere('name', 'Active A')['duration']);
     }
 
     public function test_customer_can_submit_repair_request_using_selected_package(): void
@@ -270,7 +460,19 @@ class RepairPackageApiTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create();
         $customer = User::factory()->create([
             'email' => 'package-customer@example.com',
+            'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
+
+        $repairerRole = Role::findOrCreate('Repairer', 'user');
+        $repairer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        Employee::factory()->active()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'email' => $repairer->email,
+        ]);
+        $repairer->assignRole($repairerRole);
 
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 800]);
@@ -317,6 +519,8 @@ class RepairPackageApiTest extends TestCase
             ->first();
 
         $this->assertNotNull($createdRepair);
+        $this->assertSame((int) $repairer->id, (int) $createdRepair->assigned_repairer_id);
+        $this->assertSame('new_request', (string) $createdRepair->status);
         $this->assertEquals(1100.0, (float) $createdRepair->total);
         $this->assertDatabaseHas('repair_request_service', [
             'repair_request_id' => $createdRepair->id,
@@ -331,7 +535,9 @@ class RepairPackageApiTest extends TestCase
     public function test_customer_can_submit_package_with_add_ons_and_server_recomputes_total(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $includedB = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 650]);
@@ -401,10 +607,12 @@ class RepairPackageApiTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create();
         $customer = User::factory()->create([
             'email' => 'processing-package@example.com',
+            'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
         ]);
+        $this->clockInEmployee($repairer);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $includedB = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 800]);
@@ -459,7 +667,7 @@ class RepairPackageApiTest extends TestCase
 
         $repairRequest->refresh();
 
-        $this->assertSame('in-progress', $repairRequest->status);
+        $this->assertSame('in_progress', $repairRequest->status);
         $this->assertNotNull($repairRequest->started_at);
         $this->assertEquals(1100.0, (float) $repairRequest->total);
         $this->assertEquals(1100.0, (float) $repairRequest->package_price);
@@ -473,7 +681,9 @@ class RepairPackageApiTest extends TestCase
     public function test_customer_cannot_submit_package_add_on_that_is_already_included(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedService = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $otherIncludedService = $this->createService($shopOwner, ['name' => 'Repaint', 'price' => 300]);
@@ -513,7 +723,9 @@ class RepairPackageApiTest extends TestCase
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
         $otherShopOwner = ShopOwner::factory()->approved()->create();
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 450]);
         $includedB = $this->createService($shopOwner, ['name' => 'Repaint', 'price' => 300]);
@@ -582,6 +794,7 @@ class RepairPackageApiTest extends TestCase
             'package_price' => 900,
             'add_ons_total' => 200,
             'final_total' => 1100,
+            'total_paid_amount' => 1100,
             'created_at' => now()->subDays(5),
             'updated_at' => now()->subDays(5),
             'status' => 'completed',
@@ -592,6 +805,7 @@ class RepairPackageApiTest extends TestCase
             'package_price' => 900,
             'add_ons_total' => 0,
             'final_total' => 900,
+            'total_paid_amount' => 900,
             'created_at' => now()->subDays(2),
             'updated_at' => now()->subDays(2),
             'status' => 'new_request',
@@ -612,12 +826,12 @@ class RepairPackageApiTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.overview.total_packages', 1)
             ->assertJsonPath('data.overview.total_bookings', 2)
-            ->assertJsonPath('data.overview.package_revenue', 2000)
-            ->assertJsonPath('data.overview.add_on_revenue', 200)
+            ->assertJsonPath('data.overview.package_revenue', 1785.71)
+            ->assertJsonPath('data.overview.add_on_revenue', 178.57)
             ->assertJsonPath('data.overview.add_on_attach_rate', 50)
             ->assertJsonPath('data.top_packages.0.name', 'Package A')
             ->assertJsonPath('data.top_packages.0.booking_count', 2)
-            ->assertJsonPath('data.top_packages.0.revenue', 2000);
+            ->assertJsonPath('data.top_packages.0.revenue', 1785.71);
 
         $this->assertCount(1, $response->json('data.top_packages'));
     }

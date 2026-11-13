@@ -42,7 +42,7 @@ const buildManualQueueRow = (overrides: Record<string, unknown> = {}) => ({
   request_id: "REP-POS-QUEUE-001",
   customer_name: "Walk In Customer",
   phone: "09171234567",
-  status: "pending",
+  status: "picked_up",
   payment_policy: "deposit_50",
   total: 1000,
   paid: 500,
@@ -109,7 +109,7 @@ describe("Shop owner POS warranty UI", () => {
     expect(warrantyButton).toBeEnabled();
   });
 
-  it("shows disabled Warranty button in manual queue when receipt or phone is missing", async () => {
+  it("hides Warranty button in manual queue when receipt or phone is missing", async () => {
     manualQueueRows = [buildManualQueueRow({ receipt_no: null, phone: "" })];
 
     render(<ShopOwnerPOS />);
@@ -118,11 +118,10 @@ describe("Shop owner POS warranty UI", () => {
       expect(screen.getByText("REP-POS-QUEUE-001")).toBeInTheDocument();
     });
 
-    const warrantyButton = screen.getByRole("button", { name: "Warranty" });
-    expect(warrantyButton).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Warranty" })).not.toBeInTheDocument();
   });
 
-  it("validates shop-owner warranty modal and requires at least one evidence image", async () => {
+  it("does not ask shop-owner warranty claims for evidence images", async () => {
     manualQueueRows = [buildManualQueueRow()];
 
     swalFireMock.mockImplementation(async (config: any) => {
@@ -144,14 +143,10 @@ describe("Shop owner POS warranty UI", () => {
         methodOption.selected = true;
         returnMethod.appendChild(methodOption);
 
-        const images = document.createElement("input");
-        images.id = "shop_owner_pos_warranty_images";
-        images.type = "file";
+        document.body.append(reasonCode, reasonDetails, returnMethod);
 
-        document.body.append(reasonCode, reasonDetails, returnMethod, images);
-
-        await config.preConfirm();
-        return { isConfirmed: false };
+        const value = await config.preConfirm();
+        return { isConfirmed: false, value };
       }
 
       return { isConfirmed: false };
@@ -162,8 +157,12 @@ describe("Shop owner POS warranty UI", () => {
     const warrantyButton = await screen.findByRole("button", { name: "Warranty" });
     fireEvent.click(warrantyButton);
 
-    await waitFor(() => {
-      expect(swalShowValidationMessageMock).toHaveBeenCalledWith("Please upload at least one image.");
-    });
+    await waitFor(() => expect(swalShowValidationMessageMock).not.toHaveBeenCalled());
+
+    const warrantyConfig = swalFireMock.mock.calls.find(
+      ([config]) => config?.title === "File Warranty Claim",
+    )?.[0];
+    expect(warrantyConfig?.html).not.toContain("Evidence Images");
+    expect(warrantyConfig?.html).not.toContain("shop_owner_pos_warranty_images");
   });
 });

@@ -1,4 +1,5 @@
 import React from "react";
+import { MoneyIcon } from "../components/common/MoneyIcon";
 
 type IconProps = { className?: string; title?: string };
 
@@ -84,11 +85,8 @@ export const UserGroupIcon: React.FC<IconProps> = ({ className = "" }) => (
   </IconBase>
 );
 
-export const CurrencyDollarIcon: React.FC<IconProps> = ({ className = "" }) => (
-  <IconBase className={className}>
-    <path d="M12 1v22M17 5H9a4 4 0 000 8h8a4 4 0 000-8H9a4 4 0 000 8h8" />
-  </IconBase>
-);
+export { MoneyIcon };
+export const CurrencyDollarIcon = MoneyIcon;
 
 // fallback aliases to avoid breaking imports elsewhere
 export const PlusIcon = UserIcon;

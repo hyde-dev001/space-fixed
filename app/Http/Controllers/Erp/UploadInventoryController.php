@@ -18,9 +18,15 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use App\Models\User;
+
+use App\Services\InventoryReplenishmentService;
 
 class UploadInventoryController extends Controller
 {
+    use AuthorizesRequests;
+
     private const CATEGORY_SHOES = 'shoes';
     private const CATEGORY_REPAIR_MATERIALS = 'repair_materials';
     private const SIZE_SYSTEMS = ['US', 'UK', 'EU', 'AU', 'CN'];
@@ -73,26 +79,32 @@ class UploadInventoryController extends Controller
 
         $items->setCollection(
             $items->getCollection()->map(function (InventoryItem $item) {
-                if ($item->main_image && !Storage::disk('public')->exists(ltrim($item->main_image, '/'))) {
-                    $item->main_image = null;
-                }
+                $item->main_image = InventoryImage::existingPublicPath($item->main_image);
 
                 if ($item->relationLoaded('images')) {
                     $item->setRelation(
                         'images',
                         $item->images
-                            ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                            ->filter(function ($image): bool {
+                                $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                return $image->image_path !== null;
+                            })
                             ->values()
                     );
                 }
 
                 if ($item->relationLoaded('colorVariants')) {
-                    $item->colorVariants->each(function ($variant) {
+                    $item->colorVariants->each(function ($variant): void {
                         if ($variant->relationLoaded('images')) {
                             $variant->setRelation(
                                 'images',
                                 $variant->images
-                                    ->filter(fn ($image) => $image->image_path && Storage::disk('public')->exists(ltrim($image->image_path, '/')))
+                                    ->filter(function ($image): bool {
+                                        $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                        return $image->image_path !== null;
+                                    })
                                     ->values()
                             );
                         }
@@ -121,7 +133,8 @@ class UploadInventoryController extends Controller
             'unit' => 'nullable|string|max:50',
             'available_quantity' => 'required|integer|min:1',
             'reorder_level' => 'nullable|integer|min:0',
-            'reorder_quantity' => 'nullable|integer|min:0',
+            'reorder_quantity' => 'nullable|integer|min:1',
+            'auto_stock_request_enabled' => 'nullable|boolean',
             'price' => 'nullable|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'weight' => 'nullable|numeric|min:0',
@@ -196,6 +209,8 @@ class UploadInventoryController extends Controller
             ], 403);
         }
 
+        $this->authorizeInventoryItem($request, 'create', InventoryItem::class);
+
         $actorUserId = $this->resolveActorUserId($request);
         
         // Generate SKU if not provided
@@ -218,12 +233,19 @@ class UploadInventoryController extends Controller
                 'available_quantity' => $validated['available_quantity'],
                 'reorder_level' => $validated['reorder_level'] ?? 10,
                 'reorder_quantity' => $validated['reorder_quantity'] ?? 50,
+                'auto_stock_request_enabled' => (bool) ($validated['auto_stock_request_enabled'] ?? false),
                 'price' => $validated['price'] ?? null,
                 'cost_price' => $validated['cost_price'] ?? null,
                 'weight' => $validated['weight'] ?? null,
                 'is_active' => true,
                 'created_by' => $actorUserId
             ]);
+            $replenishmentDefaults = [
+                'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                'reorder_level' => (int) $item->reorder_level,
+                'reorder_quantity' => (int) $item->reorder_quantity,
+            ];
+
             
             // Create color variants if provided
             if (!empty($validated['color_variants'])) {
@@ -237,7 +259,10 @@ class UploadInventoryController extends Controller
                         'inventory_item_id' => $item->id,
                         'color_name' => $variantData['color_name'],
                         'color_code' => $variantData['color_code'] ?? null,
-                        'quantity' => $variantQuantity
+                        'quantity' => $variantQuantity,
+                        'auto_stock_request_enabled' => empty($variantSizes) ? $replenishmentDefaults['auto_stock_request_enabled'] : null,
+                        'reorder_level' => empty($variantSizes) ? $replenishmentDefaults['reorder_level'] : null,
+                        'reorder_quantity' => empty($variantSizes) ? $replenishmentDefaults['reorder_quantity'] : null,
                     ]);
 
                     if (!empty($variantSizes)) {
@@ -260,6 +285,9 @@ class UploadInventoryController extends Controller
                                     'size' => $sizeValue,
                                     'size_system' => $sizeSystem,
                                     'quantity' => (int) $sizeData['quantity'],
+                                    'auto_stock_request_enabled' => $replenishmentDefaults['auto_stock_request_enabled'],
+                                    'reorder_level' => $replenishmentDefaults['reorder_level'],
+                                    'reorder_quantity' => $replenishmentDefaults['reorder_quantity'],
                                 ]);
                             }
                         }
@@ -291,6 +319,9 @@ class UploadInventoryController extends Controller
                         InventorySize::create([
                             'inventory_item_id' => $item->id,
                             'inventory_color_variant_id' => null,
+                            'auto_stock_request_enabled' => $replenishmentDefaults['auto_stock_request_enabled'],
+                            'reorder_level' => $replenishmentDefaults['reorder_level'],
+                            'reorder_quantity' => $replenishmentDefaults['reorder_quantity'],
                             'size' => $sizeValue,
                             'size_system' => $sizeSystem,
                             'quantity' => (int) $sizeData['quantity'],
@@ -359,7 +390,8 @@ class UploadInventoryController extends Controller
             'unit' => 'nullable|string|max:50',
             'available_quantity' => 'nullable|integer|min:0',
             'reorder_level' => 'nullable|integer|min:0',
-            'reorder_quantity' => 'nullable|integer|min:0',
+            'reorder_quantity' => 'nullable|integer|min:1',
+            'auto_stock_request_enabled' => 'nullable|boolean',
             'price' => 'nullable|numeric|min:0',
             'cost_price' => 'nullable|numeric|min:0',
             'weight' => 'nullable|numeric|min:0',
@@ -381,6 +413,8 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -421,6 +455,45 @@ class UploadInventoryController extends Controller
     }
     
     /**
+     * Update automatic replenishment settings for explicit inventory targets.
+     */
+    public function updateReplenishmentSettings(Request $request, $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'targets' => 'required|array|min:1',
+            'targets.*.type' => 'required|string|in:item,color,size',
+            'targets.*.id' => 'required|integer|min:1',
+            'targets.*.auto_stock_request_enabled' => 'required|boolean',
+            'targets.*.reorder_level' => 'required|integer|min:0',
+            'targets.*.reorder_quantity' => 'required|integer|min:1',
+        ]);
+
+        $shopOwnerId = $this->resolveShopOwnerId($request);
+        if (!$shopOwnerId) {
+            return response()->json([
+                'message' => 'Shop context is missing for this account.',
+            ], 403);
+        }
+
+        $item = InventoryItem::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'update', $item);
+
+        if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
+            return $authorizationError;
+        }
+
+        app(InventoryReplenishmentService::class)->updateSettings($item, $validated['targets']);
+
+        return response()->json([
+            'message' => 'Automatic replenishment settings updated successfully.',
+            'item' => $item->fresh(['sizes', 'colorVariants.images', 'colorVariants.sizes', 'images']),
+        ]);
+    }
+
+    /**
      * Archive inventory item (soft delete)
      */
     public function destroy(Request $request, $id)
@@ -434,6 +507,8 @@ class UploadInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorizeInventoryItem($request, 'delete', $item);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
@@ -463,6 +538,8 @@ class UploadInventoryController extends Controller
             ->onlyTrashed()
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'restore', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -484,7 +561,8 @@ class UploadInventoryController extends Controller
             'inventory_item_id' => 'required|exists:inventory_items,id',
             'images' => 'required|array',
             'images.*' => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
-            'color_variant_id' => 'nullable|exists:inventory_color_variants,id'
+            'color_variant_id' => 'nullable|exists:inventory_color_variants,id',
+            'replace_main_image' => 'sometimes|boolean',
         ]);
         
         $shopOwnerId = $this->resolveShopOwnerId($request);
@@ -497,6 +575,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($request->inventory_item_id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -504,7 +584,8 @@ class UploadInventoryController extends Controller
         $uploadedImages = $this->uploadItemImages(
             $item,
             $request->file('images'),
-            $request->color_variant_id
+            $request->color_variant_id,
+            $request->boolean('replace_main_image'),
         );
 
         $this->syncInventoryImagesToLinkedProduct(
@@ -536,6 +617,8 @@ class UploadInventoryController extends Controller
             })
             ->findOrFail($imageId);
 
+        $this->authorizeInventoryItem($request, 'update', $image->inventoryItem);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
             return $authorizationError;
         }
@@ -543,8 +626,9 @@ class UploadInventoryController extends Controller
         $this->deleteLinkedProductImageByInventoryImage($image);
 
         // Delete file from storage
-        if (Storage::disk('public')->exists($image->image_path)) {
-            Storage::disk('public')->delete($image->image_path);
+        $imagePath = InventoryImage::normalizePath($image->image_path);
+        if ($imagePath && Storage::disk('public')->exists($imagePath)) {
+            Storage::disk('public')->delete($imagePath);
         }
         
         $image->delete();
@@ -570,6 +654,8 @@ class UploadInventoryController extends Controller
                 $query->where('shop_owner_id', $shopOwnerId);
             })
             ->findOrFail($imageId);
+
+        $this->authorizeInventoryItem($request, 'update', $image->inventoryItem);
 
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $image->inventoryItem->category)) {
             return $authorizationError;
@@ -628,6 +714,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -665,6 +753,9 @@ class UploadInventoryController extends Controller
                 'color_name'        => $canonicalColorName,
                 'color_code'        => $validated['color_code'] ?? null,
                 'quantity'          => $totalQty,
+                'auto_stock_request_enabled' => empty($validated['sizes']) ? (bool) $item->auto_stock_request_enabled : null,
+                'reorder_level' => empty($validated['sizes']) ? (int) $item->reorder_level : null,
+                'reorder_quantity' => empty($validated['sizes']) ? (int) $item->reorder_quantity : null,
             ]);
 
             // 2. Upload images (stored under inventory/{id}/)
@@ -694,6 +785,9 @@ class UploadInventoryController extends Controller
                     InventorySize::create([
                         'inventory_item_id' => $item->id,
                         'inventory_color_variant_id' => $colorVariant->id,
+                        'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                        'reorder_level' => (int) $item->reorder_level,
+                        'reorder_quantity' => (int) $item->reorder_quantity,
                         'size'              => $sizeValue,
                         'size_system'       => $sizeSystem,
                         'quantity'          => $sizeData['quantity'],
@@ -827,6 +921,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -843,6 +939,24 @@ class UploadInventoryController extends Controller
 
         DB::beginTransaction();
         try {
+            $colorVariant = InventoryColorVariant::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($colorId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $hadSizes = $colorVariant->sizes()->exists();
+            $defaultReplenishment = [
+                'auto_stock_request_enabled' => (bool) $item->auto_stock_request_enabled,
+                'reorder_level' => (int) $item->reorder_level,
+                'reorder_quantity' => (int) $item->reorder_quantity,
+            ];
+            $sizeSettings = $hadSizes
+                ? $defaultReplenishment
+                : [
+                    'auto_stock_request_enabled' => (bool) ($colorVariant->auto_stock_request_enabled ?? $defaultReplenishment['auto_stock_request_enabled']),
+                    'reorder_level' => (int) ($colorVariant->reorder_level ?? $defaultReplenishment['reorder_level']),
+                    'reorder_quantity' => (int) ($colorVariant->reorder_quantity ?? $defaultReplenishment['reorder_quantity']),
+                ];
             $quantityToAdd = (int) $validated['quantity'];
             $sizeValue = trim((string) $validated['size']);
             $sizeSystem = $this->normalizeSizeSystem($validated['size_system'] ?? null);
@@ -863,6 +977,17 @@ class UploadInventoryController extends Controller
                     'size' => $sizeValue,
                     'size_system' => $sizeSystem,
                     'quantity' => $quantityToAdd,
+                    'auto_stock_request_enabled' => $sizeSettings['auto_stock_request_enabled'],
+                    'reorder_level' => $sizeSettings['reorder_level'],
+                    'reorder_quantity' => $sizeSettings['reorder_quantity'],
+                ]);
+            }
+
+            if (! $hadSizes) {
+                $colorVariant->update([
+                    'auto_stock_request_enabled' => null,
+                    'reorder_level' => null,
+                    'reorder_quantity' => null,
                 ]);
             }
 
@@ -958,6 +1083,8 @@ class UploadInventoryController extends Controller
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorizeInventoryItem($request, 'update', $item);
+
         if ($authorizationError = $this->authorizeCategoryForBusinessType($request, $item->category)) {
             return $authorizationError;
         }
@@ -1028,6 +1155,15 @@ class UploadInventoryController extends Controller
                 'message' => 'Error updating size quantity',
                 'error'   => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    protected function authorizeInventoryItem(Request $request, string $ability, InventoryItem|string $item): void
+    {
+        // Shop-owner compatibility routes use a different guard and retain
+        // their existing tenant/business-type authorization.
+        if ($request->user() instanceof User) {
+            $this->authorize($ability, $item);
         }
     }
 
@@ -1190,23 +1326,38 @@ class UploadInventoryController extends Controller
     /**
      * Upload and store images
      */
-    protected function uploadItemImages($item, $images, $colorVariantId = null)
+    protected function uploadItemImages($item, $images, $colorVariantId = null, bool $replaceMainImage = false)
     {
         $uploadedImages = [];
         
         foreach ($images as $index => $image) {
             $path = $image->store('inventory/' . $item->id, 'public');
+
+            if ($replaceMainImage && $index === 0) {
+                $thumbnailQuery = InventoryImage::query()
+                    ->where('inventory_item_id', $item->id);
+
+                if ($colorVariantId === null) {
+                    $thumbnailQuery->whereNull('inventory_color_variant_id');
+                } else {
+                    $thumbnailQuery->where('inventory_color_variant_id', $colorVariantId);
+                }
+
+                $thumbnailQuery->update(['is_thumbnail' => false]);
+            }
+
+            $isThumbnail = $index === 0 && ($replaceMainImage || ! $item->main_image);
             
             $inventoryImage = InventoryImage::create([
                 'inventory_item_id' => $item->id,
                 'inventory_color_variant_id' => $colorVariantId,
                 'image_path' => $path,
-                'is_thumbnail' => $index === 0 && !$item->main_image,
+                'is_thumbnail' => $isThumbnail,
                 'sort_order' => $index
             ]);
             
-            // Set first image as main image if not set
-            if ($index === 0 && !$item->main_image) {
+            // Set the first image as main, or explicitly replace the current main image.
+            if ($index === 0 && $colorVariantId === null && ($replaceMainImage || ! $item->main_image)) {
                 $item->main_image = $path;
                 $item->save();
             }

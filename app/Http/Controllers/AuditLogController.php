@@ -14,14 +14,18 @@ class AuditLogController extends Controller
     public function index(Request $request)
     {
         $user = Auth::guard('user')->user();
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $shopOwnerId = $shopOwner?->getKey() ?? $user?->shop_owner_id;
+
+        if (! $shopOwnerId) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
         
         // Build query
         $query = AuditLog::query();
         
         // Only show logs for the user's shop
-        if ($user && $user->shop_owner_id) {
-            $query->where('shop_owner_id', $user->shop_owner_id);
-        }
+        $query->where('shop_owner_id', $shopOwnerId);
         
         // Filter by action
         if ($request->filled('action')) {
@@ -57,23 +61,37 @@ class AuditLogController extends Controller
         }
         
         // Get distinct actions and object types for filters
-        $actions = AuditLog::where('shop_owner_id', $user->shop_owner_id ?? null)
+        $actions = AuditLog::where('shop_owner_id', $shopOwnerId)
             ->distinct('action')
             ->pluck('action');
             
-        $objectTypes = AuditLog::where('shop_owner_id', $user->shop_owner_id ?? null)
+        $objectTypes = AuditLog::where('shop_owner_id', $shopOwnerId)
             ->distinct('object_type')
             ->pluck('object_type');
         
         // Order by latest first and paginate
         $logs = $query->orderBy('created_at', 'desc')
             ->paginate($request->get('per_page', 50));
+
+        $statsQuery = AuditLog::where('shop_owner_id', $shopOwnerId);
+        $stats = [
+            'total_logs' => (clone $statsQuery)->count(),
+            'logs_last_24h' => (clone $statsQuery)
+                ->where('created_at', '>=', now()->subDay())
+                ->count(),
+            'event_counts' => (clone $statsQuery)
+                ->selectRaw('action, COUNT(*) as count')
+                ->groupBy('action')
+                ->pluck('count', 'action')
+                ->toArray(),
+        ];
         
         return response()->json([
             'logs' => $logs,
             'actions' => $actions,
             'object_types' => $objectTypes,
-            'total_count' => AuditLog::where('shop_owner_id', $user->shop_owner_id ?? null)->count(),
+            'total_count' => $stats['total_logs'],
+            'stats' => $stats,
         ]);
     }
     
@@ -83,7 +101,12 @@ class AuditLogController extends Controller
     public function stats(Request $request)
     {
         $user = Auth::guard('user')->user();
-        $shopId = $user->shop_owner_id;
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $shopId = $shopOwner?->getKey() ?? $user?->shop_owner_id;
+
+        if (! $shopId) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
         
         // Actions in last 7 days
         $actionCounts = AuditLog::where('shop_owner_id', $shopId)
@@ -122,8 +145,14 @@ class AuditLogController extends Controller
     public function export(Request $request)
     {
         $user = Auth::guard('user')->user();
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $shopOwnerId = $shopOwner?->getKey() ?? $user?->shop_owner_id;
+
+        if (! $shopOwnerId) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
         
-        $query = AuditLog::where('shop_owner_id', $user->shop_owner_id);
+        $query = AuditLog::where('shop_owner_id', $shopOwnerId);
         
         // Apply same filters as index
         if ($request->filled('action')) {

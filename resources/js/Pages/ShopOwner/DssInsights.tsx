@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../layout/AppLayout_shopOwner";
@@ -6,6 +7,7 @@ import axios from "axios";
 import BarChartOne from "../../components/charts/bar/BarChartOne";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
+import { MoneyIcon } from "../../components/common/MoneyIcon";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,7 +66,6 @@ interface ServiceMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   total_services: number;
   services: ServiceStat[];
 }
@@ -80,7 +81,6 @@ interface PackageMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   bookings: number;
   total_packages: number;
   revenue_share_pct: number;
@@ -131,7 +131,6 @@ interface RetailSalesMetrics {
   period_revenue: number;
   this_month_revenue: number;
   last_month_revenue: number;
-  rev_mom_change: number | null;
   avg_order_value: number;
   completion_rate: number | null;
   unique_customers: number;
@@ -220,12 +219,6 @@ const ClockMetricIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
-const PesoIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h4a4 4 0 110 8H9m0-8v14m0-6h7" />
-  </svg>
-);
-
 const BoxMetricIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10" />
@@ -237,34 +230,26 @@ function SummaryStatCard({
   label,
   value,
   sub,
-  badge,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
   sub?: string;
-  badge?: { text: string; positive?: boolean };
 }) {
   const Icon = icon;
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
+    <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
       <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
         <Icon className="text-gray-800 size-6 dark:text-white/90" />
       </div>
 
-      <div className="flex items-end justify-between mt-5 gap-3">
+      <div className="mt-5">
         <div>
           <span className="text-sm text-gray-500 dark:text-gray-400">{label}</span>
           <h4 className="mt-2 font-bold text-gray-800 text-title-sm dark:text-white/90">{value}</h4>
           {sub && <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">{sub}</span>}
         </div>
-
-        {badge && (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${badge.positive ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
-            {badge.text}
-          </span>
-        )}
       </div>
     </div>
   );
@@ -404,13 +389,15 @@ function UtilizationOverviewCard({
 }) {
   if (loading) {
     return (
-      <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] ${className ?? ""}`}>
+      <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden h-full flex flex-col ${className ?? ""}`}>
         <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6">
           <div className="h-6 w-32 rounded bg-gray-200 dark:bg-gray-800 animate-pulse" />
           <div className="mt-2 h-4 w-48 rounded bg-gray-100 dark:bg-gray-800 animate-pulse" />
           <div className="mt-8 h-56 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
         </div>
-        <div className="h-24 rounded-b-2xl bg-gray-50 dark:bg-gray-900/50 animate-pulse" />
+        <div className="flex flex-1 flex-col">
+          <div className="min-h-24 flex-1 rounded-b-2xl bg-gray-50 dark:bg-gray-900/50 animate-pulse" />
+        </div>
       </div>
     );
   }
@@ -476,7 +463,7 @@ function UtilizationOverviewCard({
 
   return (
     <div className={`rounded-2xl border border-gray-200 bg-gray-100 dark:border-gray-800 dark:bg-white/[0.03] overflow-hidden h-full flex flex-col ${className ?? ""}`}>
-      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6 flex-1">
+      <div className="px-5 pt-5 bg-white shadow-default rounded-2xl pb-8 dark:bg-gray-900 sm:px-6 sm:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Repair Request</h3>
@@ -487,7 +474,7 @@ function UtilizationOverviewCard({
           </span>
         </div>
 
-        <div className="relative">
+        <div className="relative mt-12">
           <div className="max-h-[280px]">
             <Chart options={options} series={series} type="radialBar" height={280} />
           </div>
@@ -509,43 +496,45 @@ function UtilizationOverviewCard({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-4 gap-x-2 px-6 py-4 sm:grid-cols-4 sm:gap-4 sm:py-5">
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Active</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.active_count}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Intake / day</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.intake_rate}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Completed ({period}d)</p>
-          <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.completed_total}</p>
-        </div>
-        <div>
-          <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Overdue</p>
-          <p className={`text-center text-base font-semibold sm:text-lg ${workload.overdue_count > 0 ? "text-red-600 dark:text-red-400" : "text-gray-800 dark:text-white/90"}`}>
-            {workload.overdue_count}
-          </p>
-        </div>
-      </div>
-      <div className="border-t border-gray-200/70 dark:border-gray-800 px-6 py-3">
-        <div className="grid grid-cols-1 gap-2 text-center text-xs sm:grid-cols-3">
+      <div className="flex flex-1 flex-col">
+        <div className="grid flex-1 content-center grid-cols-2 gap-y-4 gap-x-2 px-6 py-4 sm:grid-cols-4 sm:gap-4 sm:py-5">
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Completion Rate</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
-              {workload.completion_rate !== null ? `${workload.completion_rate}%` : "N/A"}
-            </p>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Active</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.active_count}</p>
           </div>
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Throughput / day</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">{workload.throughput}</p>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Intake / day</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.intake_rate}</p>
           </div>
           <div>
-            <p className="text-gray-500 dark:text-gray-400">Avg Completion</p>
-            <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
-              {workload.avg_days !== null && workload.avg_days !== undefined ? `${workload.avg_days}d` : "N/A"}
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Completed ({period}d)</p>
+            <p className="text-center text-base font-semibold text-gray-800 dark:text-white/90 sm:text-lg">{workload.completed_total}</p>
+          </div>
+          <div>
+            <p className="mb-1 text-center text-gray-500 text-theme-xs dark:text-gray-400 sm:text-sm">Overdue</p>
+            <p className={`text-center text-base font-semibold sm:text-lg ${workload.overdue_count > 0 ? "text-red-600 dark:text-red-400" : "text-gray-800 dark:text-white/90"}`}>
+              {workload.overdue_count}
             </p>
+          </div>
+        </div>
+        <div className="border-t border-gray-200/70 dark:border-gray-800 px-6 py-3">
+          <div className="grid grid-cols-1 gap-2 text-center text-xs sm:grid-cols-3">
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Completion Rate</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
+                {workload.completion_rate !== null ? `${workload.completion_rate}%` : "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Throughput / day</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">{workload.throughput}</p>
+            </div>
+            <div>
+              <p className="text-gray-500 dark:text-gray-400">Avg Completion</p>
+              <p className="mt-1 font-semibold text-gray-800 dark:text-white/90">
+                {workload.avg_days !== null && workload.avg_days !== undefined ? `${workload.avg_days}d` : "N/A"}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -636,7 +625,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           total_services: 0,
           services: [],
         } : undefined),
@@ -644,7 +632,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           bookings: 0,
           total_packages: 0,
           revenue_share_pct: 0,
@@ -659,7 +646,6 @@ const DssInsights: React.FC = () => {
           period_revenue: 0,
           this_month_revenue: 0,
           last_month_revenue: 0,
-          rev_mom_change: null,
           avg_order_value: 0,
           completion_rate: null,
           unique_customers: 0,
@@ -761,20 +747,7 @@ const DssInsights: React.FC = () => {
       <Head title="Assist Center - Shop Owner" />
       <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white/90">
-            Decision Support System
-          </h1>
-          <p className="mt-1 text-gray-500 dark:text-gray-400">
-            {!data || data.business_type === "repair"
-              ? "Rule-based insights for repair workload, service revenue, and actionable recommendations."
-              : data.business_type === "retail"
-              ? "Rule-based insights for retail sales, product performance, and actionable recommendations."
-              : "Rule-based insights for repair workload, retail sales, and actionable recommendations."}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-end gap-3">
           <div className="relative" ref={recDropdownRef}>
             <button
               type="button"
@@ -784,7 +757,7 @@ const DssInsights: React.FC = () => {
             >
               <span className="text-xl font-bold leading-none">!</span>
               {(data?.recommendations?.length ?? 0) > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-amber-400 text-gray-900 text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1 rounded-full bg-red-600 text-white text-xs font-bold flex items-center justify-center shadow-sm ring-2 ring-white dark:bg-red-500 dark:ring-gray-900">
                   {Math.min(99, data?.recommendations.length ?? 0)}
                 </span>
               )}
@@ -879,7 +852,7 @@ const DssInsights: React.FC = () => {
             )}
           </div>
 
-          <select
+          <MonochromeSelect
             aria-label="Analysis period"
             value={period}
             onChange={e => setPeriod(Number(e.target.value))}
@@ -888,7 +861,7 @@ const DssInsights: React.FC = () => {
             {PERIOD_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </select>
+          </MonochromeSelect>
           <button
             onClick={fetchData}
             disabled={loading}
@@ -896,7 +869,6 @@ const DssInsights: React.FC = () => {
           >
             {loading ? "Loading…" : "Refresh"}
           </button>
-        </div>
       </div>
 
       {/* Error state */}
@@ -985,7 +957,7 @@ const DssInsights: React.FC = () => {
             label="Avg. Order Value"
             value={data?.retail_sales ? fmt(data.retail_sales.avg_order_value) : "–"}
             sub={data?.retail_sales ? `${data.retail_sales.unique_customers} unique customers` : undefined}
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -997,17 +969,7 @@ const DssInsights: React.FC = () => {
             label="This Month Repair Revenue"
             value={data?.services ? fmt(data.services.this_month_revenue) : "–"}
             sub="Completed paid repairs"
-            badge={
-              data?.services?.rev_mom_change !== null && data?.services?.rev_mom_change !== undefined
-                ? `${data.services.rev_mom_change > 0 ? "+" : ""}${data.services.rev_mom_change}% vs last mo.`
-                : undefined
-            }
-            badgeColor={
-              (data?.services?.rev_mom_change ?? 0) >= 0
-                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-            }
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -1019,17 +981,7 @@ const DssInsights: React.FC = () => {
             label="This Month Retail Revenue"
             value={data?.retail_sales ? fmt(data.retail_sales.this_month_revenue) : "–"}
             sub="Completed + delivered orders"
-            badge={
-              data?.retail_sales?.rev_mom_change !== null && data?.retail_sales?.rev_mom_change !== undefined
-                ? `${data.retail_sales.rev_mom_change > 0 ? "+" : ""}${data.retail_sales.rev_mom_change}% vs last mo.`
-                : undefined
-            }
-            badgeColor={
-              (data?.retail_sales?.rev_mom_change ?? 0) >= 0
-                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
-            }
-            icon={PesoIcon}
+            icon={MoneyIcon}
             color="success"
           />
         )}
@@ -1088,14 +1040,13 @@ const DssInsights: React.FC = () => {
 
       {/* ── WORKLOAD TAB ── */}
       {tab === "workload" && isRepair && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 items-stretch gap-5">
           {/* Utilization panel */}
           <UtilizationOverviewCard
             workload={data?.workload}
             workloadLimit={data?.workload_limit ?? 0}
             period={period}
             loading={loading}
-            className="h-full"
           />
 
           {/* Daily active chart */}
@@ -1239,25 +1190,17 @@ const DssInsights: React.FC = () => {
           {data?.services && (
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
               <SummaryStatCard
-                icon={PesoIcon}
+                icon={MoneyIcon}
                 label={`Period Revenue (${period}d)`}
                 value={fmt(data.services.period_revenue)}
                 sub="Completed paid repairs"
               />
 
               <SummaryStatCard
-                icon={PesoIcon}
+                icon={MoneyIcon}
                 label="This Month"
                 value={fmt(data.services.this_month_revenue)}
                 sub="Current month total"
-                badge={
-                  data.services.rev_mom_change !== null
-                    ? {
-                        text: `${data.services.rev_mom_change > 0 ? "+" : ""}${data.services.rev_mom_change}%`,
-                        positive: data.services.rev_mom_change >= 0,
-                      }
-                    : undefined
-                }
               />
 
               <SummaryStatCard
@@ -1278,18 +1221,10 @@ const DssInsights: React.FC = () => {
 
               {data?.packages && (
                 <SummaryStatCard
-                  icon={PesoIcon}
+                  icon={MoneyIcon}
                   label="Package Revenue (This Month)"
                   value={fmt(data.packages.this_month_revenue)}
                   sub="Completed paid package repairs"
-                  badge={
-                    data.packages.rev_mom_change !== null
-                      ? {
-                          text: `${data.packages.rev_mom_change > 0 ? "+" : ""}${data.packages.rev_mom_change}%`,
-                          positive: data.packages.rev_mom_change >= 0,
-                        }
-                      : undefined
-                  }
                 />
               )}
             </div>
@@ -1453,7 +1388,7 @@ const DssInsights: React.FC = () => {
                   ? `${data.retail_sales.completed_orders} completed orders`
                   : undefined
               }
-              icon={PesoIcon}
+              icon={MoneyIcon}
               color="success"
             />
 

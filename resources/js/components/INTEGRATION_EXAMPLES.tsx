@@ -274,7 +274,7 @@ export default ERPSidebar;
 // ============================================================
 
 // Any React component can use NotificationBell
-import NotificationBell from '@/Components/common/NotificationBell';
+import NotificationBell from '@/components/common/NotificationBell';
 
 function MyComponent() {
   return (

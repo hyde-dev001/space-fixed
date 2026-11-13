@@ -9,22 +9,17 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
+use Throwable;
 
 class SuspensionAppealPublicController extends Controller
 {
-    public function show(Request $request, string $token): Response
+    public function show(string $token, SuspensionAppealService $appealService): Response
     {
         $appeal = SuspensionAppeal::query()
             ->where('appeal_token', $token)
             ->firstOrFail();
-
-        if ($appeal->isExpired() && in_array((string) $appeal->status, ['eligible', 'submitted'], true)) {
-            $appeal->update([
-                'status' => 'expired',
-                'reviewed_at' => now(),
-            ]);
-            $appeal->refresh();
-        }
+        $presentation = $appealService->presentation($appeal);
 
         $submitUrl = URL::temporarySignedRoute(
             'appeals.submit',
@@ -39,7 +34,12 @@ class SuspensionAppealPublicController extends Controller
                 'account_name' => $appeal->account_name,
                 'recipient_email' => $appeal->recipient_email,
                 'suspension_reason' => $appeal->suspension_reason,
-                'status' => $appeal->status,
+                'status' => $presentation['status'],
+                'persisted_status' => $presentation['persisted_status'],
+                'state' => $presentation['state'],
+                'current' => $presentation['current'],
+                'actionable' => $presentation['actionable'],
+                'suspension_id' => $presentation['suspension_id'],
                 'expires_at' => $appeal->expires_at?->toDateTimeString(),
                 'submitted_at' => $appeal->submitted_at?->toDateTimeString(),
             ],
@@ -49,42 +49,33 @@ class SuspensionAppealPublicController extends Controller
 
     public function submit(Request $request, string $token, SuspensionAppealService $appealService): JsonResponse
     {
-        $appeal = SuspensionAppeal::query()
-            ->where('appeal_token', $token)
-            ->firstOrFail();
-
-        if ($appeal->isExpired()) {
-            $appeal->update([
-                'status' => 'expired',
-                'reviewed_at' => now(),
-            ]);
-
-            return response()->json([
-                'message' => 'This appeal link has already expired.',
-            ], 410);
-        }
-
-        if ($appeal->status !== 'eligible') {
-            return response()->json([
-                'message' => 'This appeal was already submitted or reviewed.',
-            ], 422);
-        }
-
         $validated = $request->validate([
             'appeal_message' => ['required', 'string', 'min:20', 'max:3000'],
         ]);
 
-        $appeal->update([
-            'status' => 'submitted',
-            'appeal_message' => $validated['appeal_message'],
-            'submitted_at' => now(),
-        ]);
+        try {
+            $result = $appealService->submit($token, (string) $validated['appeal_message']);
 
-        $appealService->sendSubmissionNotificationToSuperAdmins($appeal->fresh());
+            return response()->json([
+                'message' => $result['changed']
+                    ? 'Appeal submitted successfully. Our team will review your request.'
+                    : 'This appeal submission was already committed.',
+                'status' => (string) $result['appeal']->status,
+                'changed' => $result['changed'],
+            ]);
+        } catch (HttpExceptionInterface $exception) {
+            $status = $exception->getStatusCode();
+            $message = in_array($status, [404, 409, 410, 422], true)
+                ? $exception->getMessage()
+                : 'The appeal could not be submitted.';
 
-        return response()->json([
-            'message' => 'Appeal submitted successfully. Our team will review your request.',
-            'status' => $appeal->status,
-        ]);
+            return response()->json(['message' => $message], $status);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'message' => 'The appeal could not be submitted.',
+            ], 500);
+        }
     }
 }

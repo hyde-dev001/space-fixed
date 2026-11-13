@@ -2,6 +2,7 @@
 
 namespace App\Repositories\HR;
 
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Repositories\HR\BaseRepository;
 use Illuminate\Database\Eloquent\Collection;
@@ -203,7 +204,11 @@ class EmployeeRepository extends BaseRepository
     {
         return $this->model->where('id', $id)
             ->where('shop_owner_id', $shopOwnerId)
-            ->update(['status' => 'suspended']);
+            ->where('status', '!=', EmployeeStatus::TERMINATED->value)
+            ->update([
+                'status' => 'suspended',
+                'privileged_suspension_id' => null,
+            ]);
     }
 
     /**
@@ -217,7 +222,11 @@ class EmployeeRepository extends BaseRepository
     {
         return $this->model->where('id', $id)
             ->where('shop_owner_id', $shopOwnerId)
-            ->update(['status' => 'active']);
+            ->where('status', '!=', EmployeeStatus::TERMINATED->value)
+            ->update([
+                'status' => 'active',
+                'privileged_suspension_id' => null,
+            ]);
     }
 
     /**

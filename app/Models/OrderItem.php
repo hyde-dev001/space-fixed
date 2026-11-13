@@ -4,12 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class OrderItem extends Model
 {
     protected $fillable = [
         'order_id',
         'product_id',
+        'product_variant_id',
         'product_name',
         'product_slug',
         'price',
@@ -34,11 +36,21 @@ class OrderItem extends Model
         return $this->belongsTo(Order::class);
     }
 
+    public function retailWarranty(): HasOne
+    {
+        return $this->hasOne(RetailWarranty::class);
+    }
+
     /**
      * Get the product (may be null if product was deleted)
      */
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function productVariant(): BelongsTo
+    {
+        return $this->belongsTo(ProductVariant::class);
     }
 }

@@ -287,6 +287,24 @@ class RepairerWorkflowTest extends TestCase
         $this->assertNotContains('Other Shop Service', $names);
     }
 
+    public function test_public_listing_keeps_the_approved_service_price_during_and_after_price_review(): void
+    {
+        $shop = $this->createRepairShop();
+        $service = $this->createService($shop, ['price' => 500, 'old_price' => 500, 'finance_notes' => '700']);
+
+        foreach (['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'] as $status) {
+            $service->update(['status' => $status]);
+            $this->getJson('/api/repair-services?shop_id='.$shop->id)
+                ->assertOk()
+                ->assertJsonFragment(['id' => $service->id, 'price' => '500.00'])
+                ->assertJsonMissingPath('data.0.finance_notes');
+        }
+
+        $service->update(['old_price' => null]);
+        $this->getJson('/api/repair-services?shop_id='.$shop->id)
+            ->assertOk()->assertJsonCount(0, 'data');
+    }
+
     public function test_repairer_can_process_an_assigned_service_request_through_completion(): void
     {
         $shopOwner = $this->createRepairShop();
@@ -854,7 +872,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertSame(2.0, (float) $planItem->actual_quantity);
     }
 
-    public function test_repairer_must_activate_receive_before_customer_can_confirm_delivery(): void
+    public function test_assigned_repairer_records_customer_courier_handover_before_customer_can_confirm_delivery(): void
     {
         $shopOwner = $this->createRepairShop();
         $customer = $this->createCustomer([
@@ -874,7 +892,9 @@ class RepairerWorkflowTest extends TestCase
             [
                 'status' => 'ready_for_pickup',
                 'delivery_method' => 'pickup',
+                'return_delivery_method' => 'customer_pickup',
                 'return_address' => [
+                    'version' => 'return-v1',
                     'address_line' => '123 Test Street',
                     'barangay' => 'Barangay Uno',
                     'city' => 'Quezon City',
@@ -888,44 +908,57 @@ class RepairerWorkflowTest extends TestCase
             ]
         );
 
-        $shipResponse = $this->actingAs($repairer, 'user')->postJson(
-            "/api/repairer/repairs/{$repairRequest->id}/ship",
+        $trackingResponse = $this->actingAs($customer, 'user')->postJson(
+            "/api/customer/repairs/{$repairRequest->id}/external-tracking",
             [
-                'tracking_number' => 'SHIP-12345',
-                'carrier_company' => 'Lalamove',
-                'carrier_name' => 'Rider One',
-                'carrier_phone' => '09171234567',
-                'tracking_link' => 'https://tracker.example.com/SHIP-12345',
-                'estimated_delivery_date' => now()->addDays(2)->toDateString(),
+                'leg' => 'return',
+                'carrier' => 'Lalamove',
+                'tracking_number' => '123456789006',
+                'tracking_url' => 'https://tracker.example.com/SHIP-12345',
+                'rider_name' => 'Courier Rider',
+                'rider_contact' => '09171234567',
             ]
         );
 
-        $shipResponse->assertStatus(200)
+        $trackingResponse->assertStatus(200)
             ->assertJsonPath('success', true);
 
         $repairRequest->refresh();
-        $this->assertSame('shipped', $repairRequest->status);
-        $this->assertNotNull($repairRequest->shipped_at);
+        $this->assertSame('ready_for_pickup', $repairRequest->status);
+        $this->assertNull($repairRequest->shipped_at);
         $this->assertFalse((bool) $repairRequest->pickup_enabled);
-        $this->assertSame('SHIP-12345', $repairRequest->tracking_number);
-        $this->assertSame('Lalamove', $repairRequest->carrier_company);
+        $this->assertSame('123456789006', data_get($repairRequest->return_address, 'external_tracking.tracking_number'));
+        $this->assertSame('Lalamove', data_get($repairRequest->return_address, 'external_tracking.carrier'));
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'repair_request',
+            'source_id' => $repairRequest->id,
+            'purpose' => 'repair_return',
+        ]);
 
         $confirmBeforeActivation = $this->actingAs($customer, 'user')->postJson(
             "/api/customer/repairs/{$repairRequest->id}/confirm-pickup"
         );
 
-        $confirmBeforeActivation->assertStatus(422)
-            ->assertJsonPath('success', false);
+        $confirmBeforeActivation->assertStatus(422);
 
-        $activateResponse = $this->actingAs($repairer, 'user')->postJson(
+        $shopOwnerActivation = $this->actingAs($shopOwner, 'shop_owner')->postJson(
+            "/api/shop-owner/repairs/{$repairRequest->id}/activate-pickup"
+        );
+
+        $shopOwnerActivation->assertRedirect();
+        $this->assertFalse((bool) $repairRequest->fresh()->pickup_enabled);
+
+        $repairerActivation = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"
         );
 
-        $activateResponse->assertStatus(200)
+        $repairerActivation->assertStatus(200)
             ->assertJsonPath('success', true);
 
         $repairRequest->refresh();
         $this->assertTrue((bool) $repairRequest->pickup_enabled);
+        $this->assertSame('shipped', $repairRequest->status);
+        $this->assertNotNull($repairRequest->return_logistics_locked_at);
 
         $confirmResponse = $this->actingAs($customer, 'user')->postJson(
             "/api/customer/repairs/{$repairRequest->id}/confirm-pickup"
@@ -939,7 +972,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertNotNull($repairRequest->picked_up_at);
     }
 
-    public function test_warranty_return_activation_sends_customer_notification_for_receive_confirmation(): void
+    public function test_repairer_warranty_return_activation_sends_customer_notification_for_receive_confirmation(): void
     {
         $shopOwner = $this->createRepairShop();
         $customer = $this->createCustomer([
@@ -957,7 +990,7 @@ class RepairerWorkflowTest extends TestCase
             $repairer,
             [$service->id],
             [
-                'status' => 'shipped',
+                'status' => 'ready_for_pickup',
                 'delivery_method' => 'pickup',
                 'return_delivery_method' => 'customer_pickup',
                 'total' => 0,
@@ -973,6 +1006,10 @@ class RepairerWorkflowTest extends TestCase
             ->where('user_id', $customer->id)
             ->where('type', 'repair_status_update')
             ->count();
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson("/api/shop-owner/repairs/{$repairRequest->id}/activate-pickup")
+            ->assertRedirect();
 
         $activateResponse = $this->actingAs($repairer, 'user')->postJson(
             "/api/repairer/repairs/{$repairRequest->id}/activate-pickup"

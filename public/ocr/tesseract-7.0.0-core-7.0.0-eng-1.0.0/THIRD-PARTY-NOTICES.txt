@@ -1,0 +1,8 @@
+SoleSpace browser OCR runtime components
+
+Tesseract.js 7.0.0 (Apache-2.0): https://github.com/naptha/tesseract.js
+Tesseract.js Core 7.0.0 (Apache-2.0): https://github.com/naptha/tesseract.js-core
+English trained data @tesseract.js-data/eng 1.0.0 (MIT as declared by the package): https://github.com/naptha/tessdata
+
+This bundle contains only the browser worker, core/WASM runtime, and English trained data.
+The reports and applicant documents are not included in this asset bundle.

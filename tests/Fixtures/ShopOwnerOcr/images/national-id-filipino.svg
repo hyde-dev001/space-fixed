@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2200" viewBox="0 0 1600 2200">
+  <rect width="1600" height="2200" fill="white" />
+  <g font-family="Arial, sans-serif" fill="#111">
+    <text x="100" y="110" font-size="34" fill="#a00">SYNTHETIC TEST SAMPLE - NOT AN OFFICIAL DOCUMENT</text>
+    <text x="100" y="300" font-size="46">Republic of the Philippines</text>
+    <text x="100" y="410" font-size="46">Philippine Identification Card</text>
+    <text x="100" y="520" font-size="42">Philippine Statistics Authority</text>
+    <text x="100" y="760" font-size="42">Nationality: Filipino</text>
+    <text x="100" y="880" font-size="42">Full Name: Mira Sample</text>
+    <text x="100" y="1000" font-size="42">Date of Birth: 05 February 1990</text>
+    <text x="100" y="2050" font-size="32" fill="#a00">SYNTHETIC VALUES FOR OCR TESTING ONLY</text>
+  </g>
+</svg>

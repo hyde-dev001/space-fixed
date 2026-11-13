@@ -11,6 +11,7 @@ use App\Models\HR\SalaryChange;
 use App\Models\HR\TaxBracket;
 use App\Models\HR\ThirteenthMonthAccrual;
 use App\Models\HR\AuditLog;
+use App\Support\PayrollMoney;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -33,6 +34,8 @@ class PayrollService
         $regularHolidayHours    = $this->normalizeNumber($overrides['regular_holiday_hours'] ?? 0);
         $absentDays             = $this->normalizeNumber($overrides['absent_days'] ?? 0);
         $undertimeHours         = $this->normalizeNumber($overrides['undertime_hours'] ?? 0);
+        $lateHours              = $this->normalizeNumber($overrides['late_hours'] ?? 0);
+        $halfDayDays            = $this->normalizeNumber($overrides['half_day_days'] ?? 0);
 
         $hourlyRate = $basis['hourly_rate'];
         $dailyRate  = $basis['daily_rate'];
@@ -56,15 +59,27 @@ class PayrollService
             'night_differential_hours' => 0,
             'absent_days'              => $absentDays,
             'undertime_hours'          => $undertimeHours,
+            'late_hours'               => $lateHours,
+            'half_day_days'            => $halfDayDays,
 
-            'overtime_pay'             => round($hourlyRate * $overtimeHours * $basis['overtime_multiplier'], 2),
+            'overtime_pay'             => PayrollMoney::multiply(
+                PayrollMoney::multiply($hourlyRate, $overtimeHours),
+                $basis['overtime_multiplier']
+            ),
             'rest_day_pay'             => 0,
-            'special_holiday_pay'      => round($hourlyRate * $specialHolidayHours * $basis['special_holiday_multiplier'], 2),
-            'regular_holiday_pay'      => round($hourlyRate * $regularHolidayHours * $basis['regular_holiday_multiplier'], 2),
+            'special_holiday_pay'      => PayrollMoney::multiply(
+                PayrollMoney::multiply($hourlyRate, $specialHolidayHours),
+                $basis['special_holiday_multiplier']
+            ),
+            'regular_holiday_pay'      => PayrollMoney::multiply(
+                PayrollMoney::multiply($hourlyRate, $regularHolidayHours),
+                $basis['regular_holiday_multiplier']
+            ),
             'night_differential_pay'   => 0,
 
-            'absent_deduction'         => round($dailyRate * $absentDays, 2),
-            'undertime_deduction'      => round($hourlyRate * $undertimeHours, 2),
+            'absent_deduction'         => PayrollMoney::multiply($dailyRate, $absentDays),
+            'undertime_deduction'      => PayrollMoney::multiply($hourlyRate, $undertimeHours),
+            'late_deduction'           => PayrollMoney::multiply($hourlyRate, $lateHours),
         ];
     }
 
@@ -80,20 +95,24 @@ class PayrollService
      */
     public function generatePayroll(Employee $employee, string $payPeriod, array $customComponents = [], array $overrides = []): Payroll
     {
+        $period = $this->parsePayPeriod($payPeriod);
+        $calculationOverrides = array_merge($overrides, [
+            'pay_period_start' => $period['start_date'],
+            'pay_period_end' => $period['end_date'],
+            'rate_effective_date' => $period['start_date'],
+        ]);
+
         DB::beginTransaction();
         
         try {
-            // 0. Auto-apply any approved salary changes whose effective_date <= pay period end
-            $this->applyPendingSalaryChanges($employee, $payPeriod);
-
             // 1. Create base payroll record
-            $payroll = $this->createPayrollRecord($employee, $payPeriod, $overrides);
+            $payroll = $this->createPayrollRecord($employee, $payPeriod, $calculationOverrides);
 
             // 2. Build a shared calculation payload used by preview and generation.
             $calculation = $this->buildPayrollCalculation(
                 $employee,
                 $customComponents,
-                $overrides,
+                $calculationOverrides,
                 $payroll->pay_period_end ?? null
             );
             
@@ -101,38 +120,55 @@ class PayrollService
             $components = $this->calculateComponents($employee, $payroll, $customComponents, $overrides, $calculation);
 
             // 4. Reuse the shared totals for the saved payroll record.
-            $grossPay = (float) ($calculation['gross_salary'] ?? 0);
-            $totalDeductions = (float) ($calculation['total_deductions'] ?? 0);
+            $grossPay = PayrollMoney::round($calculation['gross_salary'] ?? 0);
+            $totalDeductions = PayrollMoney::round($calculation['total_deductions'] ?? 0);
             $runDate = $calculation['run_date'];
             $statutory = $calculation['statutory'] ?? [];
 
-            $sssContribution = (float) ($statutory['sss_contribution'] ?? 0);
-            $philhealthContribution = (float) ($statutory['philhealth_contribution'] ?? 0);
-            $pagibigContribution = (float) ($statutory['pagibig_contribution'] ?? 0);
-            $taxAmount = (float) ($statutory['withholding_tax'] ?? 0);
+            $sssContribution = PayrollMoney::round($statutory['sss_contribution'] ?? 0);
+            $philhealthContribution = PayrollMoney::round($statutory['philhealth_contribution'] ?? 0);
+            $pagibigContribution = PayrollMoney::round($statutory['pagibig_contribution'] ?? 0);
+            $taxAmount = PayrollMoney::round($statutory['withholding_tax'] ?? 0);
             
             // 5. Calculate net pay
-            $netPay = (float) ($calculation['net_salary'] ?? 0);
-            $basicPayForRun = (float) (($calculation['breakdown']['basic_pay'] ?? 0));
+            $netPay = PayrollMoney::maxZero($calculation['net_salary'] ?? 0);
+            $basicPayForRun = PayrollMoney::round($calculation['breakdown']['basic_pay'] ?? 0);
 
             // 6. Update payroll record with totals
             $payroll->update([
-                'basic_salary' => round($basicPayForRun, 2),
-                'base_salary' => round($basicPayForRun, 2),
+                'basic_salary' => $basicPayForRun,
+                'base_salary' => $basicPayForRun,
                 'gross_salary' => $grossPay,
-                'deductions' => round($totalDeductions, 2),
-                'total_deductions' => round($totalDeductions, 2),
+                'deductions' => $totalDeductions,
+                'total_deductions' => $totalDeductions,
                 'tax_amount' => $taxAmount,
                 'tax_deductions' => $taxAmount,
-                'sss_contributions' => round($sssContribution, 2),
-                'philhealth' => round($philhealthContribution, 2),
-                'pag_ibig' => round($pagibigContribution, 2),
-                'net_salary' => round(max(0, $netPay), 2),
+                'sss_contributions' => $sssContribution,
+                'philhealth' => $philhealthContribution,
+                'pag_ibig' => $pagibigContribution,
+                'net_salary' => $netPay,
+                'calculation_snapshot' => [
+                    'version' => 2,
+                    'period' => [
+                        'start' => $period['start_date'],
+                        'end' => $period['end_date'],
+                    ],
+                    'run_date' => $runDate->toDateString(),
+                    'rules' => $calculation['rules'],
+                    'statutory_bases' => $calculation['statutory_bases'] ?? [],
+                    'statutory' => $calculation['statutory'],
+                    'employer_contributions' => $calculation['statutory']['employer_contributions'] ?? [],
+                    'totals' => [
+                        'gross_salary' => $grossPay,
+                        'total_deductions' => $totalDeductions,
+                        'net_salary' => $netPay,
+                    ],
+                ],
                 'status' => 'processed'
             ]);
             
             // 7. Create tax component record
-            if ($taxAmount > 0) {
+            if (PayrollMoney::compare($taxAmount, 0) > 0) {
                 PayrollComponent::create([
                     'payroll_id' => $payroll->id,
                     'shop_owner_id' => $employee->shop_owner_id,
@@ -162,7 +198,7 @@ class PayrollService
             DB::rollBack();
             
             // Log error
-            if (Auth::check()) {
+            if (Auth::guard('user')->check() || Auth::guard('shop_owner')->check()) {
                 AuditLog::createLog([
                     'shop_owner_id' => $employee->shop_owner_id,
                     'employee_id' => $employee->id,
@@ -190,14 +226,23 @@ class PayrollService
     public function previewPayroll(Employee $employee, string $payPeriod, array $additionalEarnings = [], array $overrides = []): array
     {
         $period = $this->parsePayPeriod($payPeriod);
+        $calculationOverrides = array_merge($overrides, [
+            'pay_period_start' => $period['start_date'],
+            'pay_period_end' => $period['end_date'],
+            'rate_effective_date' => $period['start_date'],
+        ]);
 
-        $resolvedAdditionalEarnings = $this->resolveAdditionalEarnings($employee, $period['normalized_period_key'], $additionalEarnings);
+        $resolvedAdditionalEarnings = $this->resolveAdditionalEarnings(
+            $employee,
+            $period['normalized_period_key'],
+            array_merge($additionalEarnings, ['rate_effective_date' => $period['start_date']])
+        );
         $customComponents = $resolvedAdditionalEarnings['components'] ?? [];
 
         $calculation = $this->buildPayrollCalculation(
             $employee,
             $customComponents,
-            $overrides,
+            $calculationOverrides,
             $period['end_date']
         );
 
@@ -212,43 +257,6 @@ class PayrollService
         ];
     }
     
-    /**
-     * Auto-apply any approved salary changes whose effective_date falls within or before
-     * the pay period being generated. Applies the most-recent eligible change first
-     * so `$employee->salary` is up-to-date when the payroll record is created.
-     */
-    protected function applyPendingSalaryChanges(Employee $employee, string $payPeriod): void
-    {
-        if (strpos($payPeriod, ' to ') !== false) {
-            [, $endDate] = explode(' to ', $payPeriod);
-        } else {
-            $endDate = date('Y-m-t', strtotime($payPeriod . '-01'));
-        }
-
-        $pendingChanges = SalaryChange::where('employee_id', $employee->id)
-            ->where('status', SalaryChange::STATUS_APPROVED)
-            ->whereNull('applied_at')
-            ->whereDate('effective_date', '<=', $endDate)
-            ->orderBy('effective_date', 'asc')
-            ->get();
-
-        foreach ($pendingChanges as $change) {
-            try {
-                $change->applyToEmployee();
-            } catch (\Exception $e) {
-                // Log but do not abort payroll generation for a failed salary-change apply
-                \Illuminate\Support\Facades\Log::warning(
-                    "Failed to auto-apply salary change #{$change->id} during payroll generation: " . $e->getMessage()
-                );
-            }
-        }
-
-        // Refresh the employee model so the new salary is used below
-        if ($pendingChanges->isNotEmpty()) {
-            $employee->refresh();
-        }
-    }
-
     /**
      * Create initial payroll record
      */
@@ -277,7 +285,10 @@ class PayrollService
             'status' => 'pending',
             'payment_date' => $overrides['payment_date'] ?? date('Y-m-d', strtotime($endDate . ' +5 days')),
             'payment_method' => $overrides['payment_method'] ?? 'bank_transfer',
-            'generated_by' => Auth::id(),
+            // Shop owners authenticate through a separate guard and do not
+            // have a users-table id. Keep this nullable user metadata valid
+            // while AuditLog::createLog() records the shop-owner actor.
+            'generated_by' => Auth::guard('user')->id(),
             'generated_at' => now()
         ]);
     }
@@ -325,11 +336,11 @@ class PayrollService
     ): array {
         $rules = $this->computeRuleEngineAmounts($employee, $overrides);
         $componentDefinitions = $this->buildComponentDefinitions($employee, $customComponents, $overrides, $rules);
-        $basicSalary = (float) ($rules['monthly_base_salary'] ?? 0);
+        $basicSalary = PayrollMoney::round($rules['monthly_base_salary'] ?? 0);
 
         $components = collect($componentDefinitions)
             ->map(function (array $componentData) use ($basicSalary, $overrides) {
-                $baseAmount = (float) ($componentData['base_amount'] ?? 0);
+                $baseAmount = PayrollMoney::round($componentData['base_amount'] ?? 0);
 
                 return [
                     'type' => $componentData['type'],
@@ -342,14 +353,12 @@ class PayrollService
                     'base_amount' => $baseAmount,
                     'method' => $componentData['method'],
                     'calculation_method' => $componentData['method'],
-                    'calculated_amount' => round(
-                        $this->calculateComponentAmount(
-                            $componentData['method'],
-                            $baseAmount,
-                            $basicSalary,
-                            $overrides
-                        ),
-                        2
+                    'calculated_amount' => PayrollMoney::round($this->calculateComponentAmount(
+                        $componentData['method'],
+                        $baseAmount,
+                        $basicSalary,
+                        $overrides
+                    )
                     ),
                     'is_taxable' => (bool) ($componentData['taxable'] ?? false),
                     'is_recurring' => (bool) ($componentData['recurring'] ?? false),
@@ -372,42 +381,62 @@ class PayrollService
             ->where('component_type', PayrollComponent::TYPE_BENEFIT)
             ->where('affects_gross', true);
 
-        $grossPay = (float) ($earnings->sum('calculated_amount') + $benefits->sum('calculated_amount'));
-        $componentDeductions = (float) $deductions->sum('calculated_amount');
+        $grossPay = PayrollMoney::add(
+            ...$earnings->pluck('calculated_amount')->merge($benefits->pluck('calculated_amount'))->all()
+        );
+        $componentDeductions = PayrollMoney::add(...$deductions->pluck('calculated_amount')->all());
         $resolvedRunDate = $this->resolveRunDate($runDate, $overrides);
         $taxableAmount = array_key_exists('taxable_income_override', $overrides)
-            ? (float) $overrides['taxable_income_override']
-            : (float) $components
+            ? PayrollMoney::round($overrides['taxable_income_override'])
+            : PayrollMoney::add(...$components
                 ->where('is_taxable', true)
                 ->where('affects_gross', true)
-                ->sum('calculated_amount');
+                ->pluck('calculated_amount')
+                ->all());
+        $statutoryBases = [
+            'sss' => $grossPay,
+            'philhealth' => $rules['monthly_base_salary'] ?? $basicSalary,
+            'pagibig' => $grossPay,
+        ];
         $statutory = $this->calculateStatutoryDeductions(
             (int) $employee->shop_owner_id,
             $taxableAmount,
-            $resolvedRunDate
+            $resolvedRunDate,
+            $statutoryBases
         );
 
-        $withholdingTax = (float) ($statutory['withholding_tax'] ?? 0);
-        $sssContribution = (float) ($statutory['sss_contribution'] ?? 0);
-        $philhealthContribution = (float) ($statutory['philhealth_contribution'] ?? 0);
-        $pagibigContribution = (float) ($statutory['pagibig_contribution'] ?? 0);
-        $totalDeductions = $componentDeductions + $withholdingTax + $sssContribution + $philhealthContribution + $pagibigContribution;
-        $netPay = $grossPay - $totalDeductions;
+        $withholdingTax = PayrollMoney::round($statutory['withholding_tax'] ?? 0);
+        $sssContribution = PayrollMoney::round($statutory['sss_contribution'] ?? 0);
+        $philhealthContribution = PayrollMoney::round($statutory['philhealth_contribution'] ?? 0);
+        $pagibigContribution = PayrollMoney::round($statutory['pagibig_contribution'] ?? 0);
+        $totalDeductions = PayrollMoney::add(
+            $componentDeductions,
+            $withholdingTax,
+            $sssContribution,
+            $philhealthContribution,
+            $pagibigContribution,
+        );
+        $netPay = PayrollMoney::subtract($grossPay, $totalDeductions);
 
         return [
             'run_date' => $resolvedRunDate,
             'rules' => $rules,
             'components' => $components,
-            'gross_salary' => round($grossPay, 2),
-            'net_salary' => round($netPay, 2),
-            'taxable_income' => round($taxableAmount, 2),
-            'component_deductions' => round($componentDeductions, 2),
-            'total_deductions' => round($totalDeductions, 2),
+            'gross_salary' => $grossPay,
+            'net_salary' => PayrollMoney::maxZero($netPay),
+            'taxable_income' => PayrollMoney::round($taxableAmount),
+            'statutory_bases' => array_map(
+                static fn (mixed $amount): string => PayrollMoney::round($amount),
+                $statutoryBases
+            ),
+            'component_deductions' => $componentDeductions,
+            'total_deductions' => $totalDeductions,
             'statutory' => [
-                'withholding_tax' => round($withholdingTax, 2),
-                'sss_contribution' => round($sssContribution, 2),
-                'philhealth_contribution' => round($philhealthContribution, 2),
-                'pagibig_contribution' => round($pagibigContribution, 2),
+                'withholding_tax' => $withholdingTax,
+                'sss_contribution' => $sssContribution,
+                'philhealth_contribution' => $philhealthContribution,
+                'pagibig_contribution' => $pagibigContribution,
+                'employer_contributions' => $statutory['employer_contributions'] ?? [],
             ],
             'breakdown' => [
                 'basic_pay' => $this->sumComponentAmounts($components, ['Basic Salary']),
@@ -419,6 +448,7 @@ class PayrollService
                 'other_allowances' => $this->sumComponentAmounts($components, ['Other Allowances', 'Allowances']),
                 'absent_deductions' => $this->sumComponentAmounts($components, ['Absent Day Deduction', 'Absent Deductions']),
                 'undertime_deductions' => $this->sumComponentAmounts($components, ['Undertime Deduction', 'Undertime Deductions']),
+                'late_deductions' => $this->sumComponentAmounts($components, ['Late Deduction', 'Late Deductions']),
             ],
         ];
     }
@@ -433,16 +463,18 @@ class PayrollService
      */
     public function resolveAdditionalEarnings(Employee $employee, ?string $periodLabel = null, array $values = []): array
     {
-        $rateBasis = $this->resolveRateBasis($employee, []);
+        $rateBasis = $this->resolveRateBasis($employee, [
+            'rate_effective_date' => $values['rate_effective_date'] ?? $this->periodStartDate($periodLabel),
+        ]);
         $baseSalary = $this->normalizeNumber($rateBasis['monthly_base_salary'] ?? 0);
 
         $salesCommission = array_key_exists('sales_commission', $values)
             ? $this->normalizeNumber($values['sales_commission'])
-            : round($baseSalary * $this->normalizeNumber($employee->sales_commission_rate ?? 0), 2);
+            : (float) PayrollMoney::multiply($baseSalary, $this->normalizeNumber($employee->sales_commission_rate ?? 0));
 
         $performanceBonus = array_key_exists('performance_bonus', $values)
             ? $this->normalizeNumber($values['performance_bonus'])
-            : round($baseSalary * $this->normalizeNumber($employee->performance_bonus_rate ?? 0), 2);
+            : (float) PayrollMoney::multiply($baseSalary, $this->normalizeNumber($employee->performance_bonus_rate ?? 0));
 
         $otherAllowances = array_key_exists('other_allowances', $values)
             ? $this->normalizeNumber($values['other_allowances'])
@@ -491,9 +523,9 @@ class PayrollService
         }
 
         return [
-            'sales_commission' => round($salesCommission, 2),
-            'performance_bonus' => round($performanceBonus, 2),
-            'other_allowances' => round($otherAllowances, 2),
+            'sales_commission' => (float) PayrollMoney::round($salesCommission),
+            'performance_bonus' => (float) PayrollMoney::round($performanceBonus),
+            'other_allowances' => (float) PayrollMoney::round($otherAllowances),
             'components' => $components,
         ];
     }
@@ -516,7 +548,7 @@ class PayrollService
     protected function buildComponentDefinitions(Employee $employee, array $customComponents, array $overrides, ?array $rules = null): array
     {
         $rules ??= $this->computeRuleEngineAmounts($employee, $overrides);
-        $basicSalary = (float) ($rules['monthly_base_salary'] ?? 0);
+        $basicSalary = PayrollMoney::round($rules['monthly_base_salary'] ?? 0);
         $noWorkNoPay = $this->isNoWorkNoPayEnabled();
 
         $standardEarnings = [
@@ -538,7 +570,7 @@ class PayrollService
                 'type' => PayrollComponent::TYPE_EARNING,
                 'name' => '13th Month Pay (Accrual)',
                 'code' => PayrollComponent::CODE_13TH_ACCRUAL,
-                'base_amount' => $basicSalary / 12,
+                'base_amount' => PayrollMoney::divide($basicSalary, 12),
                 'method' => PayrollComponent::METHOD_FIXED,
                 'taxable' => false, // Tax-exempt up to ₱90,000 per NIRC Sec. 32(B)(7)(e)
                 'recurring' => true,
@@ -627,6 +659,20 @@ class PayrollService
             ];
         }
 
+        if (($rules['late_deduction'] ?? 0) > 0) {
+            $standardDeductions[] = [
+                'type'        => PayrollComponent::TYPE_DEDUCTION,
+                'name'        => 'Late Deduction',
+                'base_amount' => $rules['late_deduction'],
+                'method'      => PayrollComponent::METHOD_FIXED,
+                'taxable'     => false,
+                'recurring'   => false,
+                'affects_gross' => false,
+                'category'    => 'Attendance Deductions',
+                'description' => number_format($rules['late_hours'], 2) . ' late hour(s) × ₱' . number_format($rules['hourly_rate'], 2) . '/hour',
+            ];
+        }
+
         return array_merge($standardEarnings, $standardDeductions, $customComponents);
     }
 
@@ -662,17 +708,18 @@ class PayrollService
         return $components;
     }
 
-    protected function sumComponentAmounts($components, array $names): float
+    protected function sumComponentAmounts($components, array $names): string
     {
-        return round((float) collect($components)
+        return PayrollMoney::add(...collect($components)
             ->whereIn('component_name', $names)
-            ->sum('calculated_amount'), 2);
+            ->pluck('calculated_amount')
+            ->all());
     }
     
     /**
      * Calculate component amount based on method
      */
-    protected function calculateComponentAmount(string $method, float $baseAmount, float $basicSalary, array $overrides): float
+    protected function calculateComponentAmount(string $method, mixed $baseAmount, mixed $basicSalary, array $overrides): string
     {
         $workDays = max(1, $this->normalizeNumber($overrides['standard_work_days_per_month'] ?? 26));
         $workHours = max(1, $this->normalizeNumber($overrides['standard_work_hours_per_day'] ?? 8));
@@ -680,20 +727,24 @@ class PayrollService
 
         $attendanceDays = $this->normalizeNumber($overrides['attendance_days'] ?? $workDays);
         $leaveDays = $this->normalizeNumber($overrides['leave_days'] ?? 0);
+        $halfDayDays = min($attendanceDays, $this->normalizeNumber($overrides['half_day_days'] ?? 0));
         $paidLeaveAsWorked = $this->doesPaidLeaveCountAsWorked();
-        $paidDays = min($workDays, max(0, $attendanceDays + ($paidLeaveAsWorked ? $leaveDays : 0)));
+        $paidDays = min(
+            $workDays,
+            max(0, $attendanceDays - ($halfDayDays * 0.5) + ($paidLeaveAsWorked ? $leaveDays : 0))
+        );
 
         return match($method) {
-            PayrollComponent::METHOD_FIXED => $baseAmount,
-            PayrollComponent::METHOD_PERCENTAGE_OF_BASIC => $basicSalary * ($baseAmount / 100),
-            PayrollComponent::METHOD_PERCENTAGE_OF_GROSS => ($overrides['gross_salary'] ?? $basicSalary) * ($baseAmount / 100),
-            PayrollComponent::METHOD_DAYS_WORKED => ($basicSalary / $workDays) * $paidDays,
-            PayrollComponent::METHOD_HOURS_WORKED => ($basicSalary / $monthlyHours) * ($overrides['hours_worked'] ?? $monthlyHours),
-            PayrollComponent::METHOD_ALLOWANCE => $baseAmount,
-            PayrollComponent::METHOD_OVERTIME => $baseAmount,
-            PayrollComponent::METHOD_COMMISSION => $baseAmount,
-            PayrollComponent::METHOD_CUSTOM => $baseAmount,
-            default => $baseAmount
+            PayrollComponent::METHOD_FIXED => PayrollMoney::round($baseAmount),
+            PayrollComponent::METHOD_PERCENTAGE_OF_BASIC => PayrollMoney::percent($basicSalary, $baseAmount),
+            PayrollComponent::METHOD_PERCENTAGE_OF_GROSS => PayrollMoney::percent($overrides['gross_salary'] ?? $basicSalary, $baseAmount),
+            PayrollComponent::METHOD_DAYS_WORKED => PayrollMoney::multiply(PayrollMoney::divide($basicSalary, $workDays), $paidDays),
+            PayrollComponent::METHOD_HOURS_WORKED => PayrollMoney::multiply(PayrollMoney::divide($basicSalary, $monthlyHours), $overrides['hours_worked'] ?? $monthlyHours),
+            PayrollComponent::METHOD_ALLOWANCE => PayrollMoney::round($baseAmount),
+            PayrollComponent::METHOD_OVERTIME => PayrollMoney::round($baseAmount),
+            PayrollComponent::METHOD_COMMISSION => PayrollMoney::round($baseAmount),
+            PayrollComponent::METHOD_CUSTOM => PayrollMoney::round($baseAmount),
+            default => PayrollMoney::round($baseAmount)
         };
     }
 
@@ -709,7 +760,7 @@ class PayrollService
 
     protected function resolveRateBasis(Employee $employee, array $overrides): array
     {
-        $dailyBase = $this->normalizeNumber($employee->salary ?? 0);
+        $dailyBase = PayrollMoney::round($this->resolveDailySalary($employee, $overrides));
 
         $setting = $this->resolveBranchPayrollSetting($employee, $overrides);
 
@@ -726,21 +777,65 @@ class PayrollService
         $workHours = $workHours > 0 ? $workHours : 8;
 
         $dailyRate = $dailyBase;
-        $monthlyBase = $dailyRate * $workDays;
-        $hourlyRate = $workHours > 0 ? $dailyRate / $workHours : 0;
+        $monthlyBase = PayrollMoney::multiply($dailyRate, $workDays);
+        $hourlyRate = $workHours > 0 ? PayrollMoney::divide($dailyRate, $workHours) : '0.00000000';
 
         return [
-            'monthly_base_salary'       => round($monthlyBase, 2),
+            'monthly_base_salary'       => $monthlyBase,
             'work_days_basis'           => $workDays,
             'work_hours_basis'          => $workHours,
-            'daily_rate'                => round($dailyRate, 6),
-            'hourly_rate'               => round($hourlyRate, 6),
+            'daily_rate'                => $dailyRate,
+            'hourly_rate'               => $hourlyRate,
             'overtime_multiplier'       => $this->normalizeNumber($overrides['overtime_multiplier'] ?? ($setting?->overtime_multiplier ?? 1.25)),
             'rest_day_multiplier'       => $this->normalizeNumber($overrides['rest_day_multiplier'] ?? ($setting?->rest_day_multiplier ?? 1.30)),
             'special_holiday_multiplier' => $this->normalizeNumber($overrides['special_holiday_multiplier'] ?? ($setting?->special_holiday_multiplier ?? 1.30)),
             'regular_holiday_multiplier' => $this->normalizeNumber($overrides['regular_holiday_multiplier'] ?? ($setting?->regular_holiday_multiplier ?? 2.00)),
             'night_differential_rate'   => $this->normalizeNumber($overrides['night_differential_rate'] ?? ($setting?->night_differential_rate ?? 0.10)),
         ];
+    }
+
+    protected function resolveDailySalary(Employee $employee, array $overrides): string
+    {
+        $rateDate = $overrides['rate_effective_date'] ?? $overrides['pay_period_start'] ?? null;
+        if (empty($rateDate) || ! Schema::hasTable('salary_changes')) {
+            return PayrollMoney::round($employee->salary ?? 0);
+        }
+
+        $eligibleStatuses = [SalaryChange::STATUS_APPROVED, SalaryChange::STATUS_APPLIED];
+        $effectiveChange = SalaryChange::query()
+            ->where('employee_id', $employee->id)
+            ->whereIn('status', $eligibleStatuses)
+            ->whereDate('effective_date', '<=', $rateDate)
+            ->latest('effective_date')
+            ->latest('id')
+            ->first();
+
+        if ($effectiveChange) {
+            return PayrollMoney::round($effectiveChange->new_salary);
+        }
+
+        $futureChange = SalaryChange::query()
+            ->where('employee_id', $employee->id)
+            ->whereIn('status', $eligibleStatuses)
+            ->whereDate('effective_date', '>', $rateDate)
+            ->oldest('effective_date')
+            ->oldest('id')
+            ->first();
+
+        return PayrollMoney::round($futureChange?->previous_salary ?? $employee->salary ?? 0);
+    }
+
+    protected function periodStartDate(?string $periodLabel): ?string
+    {
+        if (! $periodLabel) {
+            return null;
+        }
+
+        try {
+            return $this->parsePayPeriod($periodLabel)['start_date'];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     protected function resolveBranchPayrollSetting(Employee $employee, array $overrides): ?BranchPayrollSetting
@@ -777,13 +872,13 @@ class PayrollService
     /**
      * Calculate progressive income tax (BIR TRAIN Law)
      */
-    public function calculateTax(int $shopOwnerId, float $grossIncome, mixed $runDate = null, array $options = []): float
+    public function calculateTax(int $shopOwnerId, mixed $grossIncome, mixed $runDate = null, array $options = []): string
     {
         $date = $this->resolveRunDate($runDate, []);
 
         $configuredTax = $this->calculateWithholdingTaxFromConfiguredTrainRate($shopOwnerId, $grossIncome, $date);
         if ($configuredTax !== null) {
-            return $configuredTax;
+            return PayrollMoney::round($configuredTax);
         }
 
         $result = TaxBracket::calculateTax($shopOwnerId, $grossIncome, array_merge([
@@ -793,30 +888,51 @@ class PayrollService
             'tax_year' => (int) $date->format('Y'),
         ], $options));
 
-        return (float) ($result['total_tax'] ?? 0);
+        if (($result['message'] ?? null) === 'No tax brackets found') {
+            return $this->calculateOfficialMonthlyWithholdingTax($grossIncome, $date);
+        }
+
+        return PayrollMoney::round($result['total_tax'] ?? 0);
     }
 
     /**
      * Calculate statutory deductions for a payroll run date.
      */
-    public function calculateStatutoryDeductions(int $shopOwnerId, float $taxableIncome, mixed $runDate = null): array
+    public function calculateStatutoryDeductions(
+        int $shopOwnerId,
+        mixed $taxableIncome,
+        mixed $runDate = null,
+        array $bases = []
+    ): array
     {
         $date = $this->resolveRunDate($runDate, []);
+        $sssBase = $bases['sss'] ?? $taxableIncome;
+        $philhealthBase = $bases['philhealth'] ?? $taxableIncome;
+        $pagibigBase = $bases['pagibig'] ?? $taxableIncome;
 
-        $sss = $this->calculateSssContribution($shopOwnerId, $taxableIncome, $date);
-        $philhealth = $this->calculatePhilHealthContribution($shopOwnerId, $taxableIncome, $date);
-        $pagibig = $this->calculatePagIbigContribution($shopOwnerId, $taxableIncome, $date);
-        $withholdingTax = $this->calculateTax($shopOwnerId, max(0, $taxableIncome - ($sss + $philhealth + $pagibig)), $date);
+        $sss = $this->calculateSssContribution($shopOwnerId, $sssBase, $date);
+        $philhealth = $this->calculatePhilHealthContribution($shopOwnerId, $philhealthBase, $date);
+        $pagibig = $this->calculatePagIbigContribution($shopOwnerId, $pagibigBase, $date);
+        $withholdingTax = $this->calculateTax(
+            $shopOwnerId,
+            PayrollMoney::maxZero(PayrollMoney::subtract($taxableIncome, PayrollMoney::add($sss, $philhealth, $pagibig))),
+            $date
+        );
 
         return [
-            'sss_contribution' => round($sss, 2),
-            'philhealth_contribution' => round($philhealth, 2),
-            'pagibig_contribution' => round($pagibig, 2),
-            'withholding_tax' => round($withholdingTax, 2),
+            'sss_contribution' => PayrollMoney::round($sss),
+            'philhealth_contribution' => PayrollMoney::round($philhealth),
+            'pagibig_contribution' => PayrollMoney::round($pagibig),
+            'withholding_tax' => PayrollMoney::round($withholdingTax),
+            'employer_contributions' => [
+                'sss_contribution' => $this->calculateSssEmployerContribution($shopOwnerId, $sssBase, $date),
+                'philhealth_contribution' => $this->calculatePhilHealthEmployerContribution($shopOwnerId, $philhealthBase, $date),
+                'pagibig_contribution' => $this->calculatePagIbigEmployerContribution($shopOwnerId, $pagibigBase, $date),
+            ],
         ];
     }
 
-    protected function calculateSssContribution(int $shopOwnerId, float $income, Carbon $runDate): float
+    protected function calculateSssContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
     {
         $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_SSS_EE', $runDate);
 
@@ -826,107 +942,282 @@ class PayrollService
 
             if (is_array($brackets) && !empty($brackets)) {
                 foreach ($brackets as $bracket) {
-                    $min = (float) ($bracket['min'] ?? 0);
-                    $max = isset($bracket['max']) ? (float) $bracket['max'] : null;
-                    $employeeShare = (float) ($bracket['employee_share'] ?? 0);
+                    $min = $bracket['min'] ?? 0;
+                    $max = $bracket['max'] ?? null;
+                    $employeeShare = $bracket['employee_share'] ?? 0;
 
-                    if ($income >= $min && ($max === null || $income <= $max)) {
-                        return $employeeShare;
+                    if (PayrollMoney::compare($income, $min) >= 0
+                        && ($max === null || PayrollMoney::compare($income, $max) <= 0)) {
+                        return PayrollMoney::round($employeeShare);
                     }
                 }
             }
 
             if ($taxRate->type === 'fixed') {
-                return (float) ($taxRate->fixed_amount ?? 0);
+                return PayrollMoney::round($taxRate->fixed_amount ?? 0);
             }
 
-            return round(($income * (float) $taxRate->rate) / 100, 2);
+            $base = ($meta['calculation_base'] ?? null) === 'sss_msc'
+                ? $this->resolveSssMsc($income)
+                : $income;
+
+            return PayrollMoney::percent($base, $meta['employee_rate'] ?? $taxRate->rate ?? 0);
         }
 
-        return $this->calculateSssFallback($income);
+        return $this->calculateSssFallback($income, $runDate);
     }
 
-    protected function calculatePhilHealthContribution(int $shopOwnerId, float $income, Carbon $runDate): float
+    protected function calculatePhilHealthContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
     {
         $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_PHILHEALTH_EE', $runDate);
 
         if ($taxRate) {
             $meta = is_array($taxRate->meta) ? $taxRate->meta : [];
 
-            $floor = (float) ($meta['min_salary'] ?? 10000);
-            $ceiling = (float) ($meta['max_salary'] ?? 100000);
-
-            $base = min(max($income, $floor), $ceiling);
+            $floor = $meta['min_salary'] ?? 10000;
+            $ceiling = $meta['max_salary'] ?? 100000;
+            $base = PayrollMoney::compare($income, $floor) < 0 ? $floor : $income;
+            $base = PayrollMoney::compare($base, $ceiling) > 0 ? $ceiling : $base;
 
             if ($taxRate->type === 'fixed') {
-                return (float) ($taxRate->fixed_amount ?? 0);
+                return PayrollMoney::round($taxRate->fixed_amount ?? 0);
             }
 
-            return round(($base * (float) $taxRate->rate) / 100, 2);
+            return PayrollMoney::percent($base, $meta['employee_rate'] ?? $taxRate->rate ?? 0);
         }
 
-        return round(min(max($income, 10000), 100000) * 0.025, 2);
+        [$floor, $ceiling] = $this->philHealthSalaryBounds($runDate);
+        $base = PayrollMoney::compare($income, $floor) < 0 ? $floor : $income;
+        $base = PayrollMoney::compare($base, $ceiling) > 0 ? $ceiling : $base;
+
+        return PayrollMoney::percent($base, $this->philHealthEmployeeRate($runDate));
     }
 
-    protected function calculatePagIbigContribution(int $shopOwnerId, float $income, Carbon $runDate): float
+    protected function calculatePagIbigContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
     {
         $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_PAGIBIG_EE', $runDate);
 
         if ($taxRate) {
             $meta = is_array($taxRate->meta) ? $taxRate->meta : [];
             $tiers = $meta['tiers'] ?? [];
-            $maxContribution = (float) ($meta['max_contribution'] ?? 100);
+            $maxContribution = $meta['max_contribution'] ?? 100;
+            $maxSalary = $meta['max_salary'] ?? 5000;
+            $income = PayrollMoney::compare($income, $maxSalary) > 0 ? $maxSalary : PayrollMoney::maxZero($income);
 
             if (is_array($tiers) && !empty($tiers)) {
                 foreach ($tiers as $tier) {
-                    $max = isset($tier['max_salary']) ? (float) $tier['max_salary'] : null;
-                    $rate = (float) ($tier['rate'] ?? 0);
+                    $max = $tier['max_salary'] ?? null;
+                    $rate = $tier['rate'] ?? 0;
 
-                    if ($max === null || $income <= $max) {
-                        return min(round(($income * $rate) / 100, 2), $maxContribution);
+                    if ($max === null || PayrollMoney::compare($income, $max) <= 0) {
+                        $contribution = PayrollMoney::percent($income, $rate);
+
+                        return PayrollMoney::compare($contribution, $maxContribution) > 0
+                            ? PayrollMoney::round($maxContribution)
+                            : $contribution;
                     }
                 }
             }
 
             if ($taxRate->type === 'fixed') {
-                return (float) ($taxRate->fixed_amount ?? 0);
+                return PayrollMoney::round($taxRate->fixed_amount ?? 0);
             }
 
-            return min(round(($income * (float) $taxRate->rate) / 100, 2), $maxContribution);
+            $contribution = PayrollMoney::percent($income, $taxRate->rate ?? 0);
+
+            return PayrollMoney::compare($contribution, $maxContribution) > 0
+                ? PayrollMoney::round($maxContribution)
+                : $contribution;
         }
 
-        return $income <= 1500
-            ? round($income * 0.01, 2)
-            : min(round($income * 0.02, 2), 100);
+        $base = PayrollMoney::compare($income, 5000) > 0 ? '5000' : PayrollMoney::maxZero($income);
+        $contribution = PayrollMoney::percent($base, PayrollMoney::compare($base, 1500) <= 0 ? '1' : '2');
+
+        return PayrollMoney::compare($contribution, 100) > 0
+            ? '100.00'
+            : $contribution;
     }
 
-    protected function calculateSssFallback(float $income): float
+    protected function calculateSssEmployerContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
     {
-        if ($income >= 30000) {
-            return 1350;
-        }
+        $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_SSS_EE', $runDate);
 
-        $table = [
-            4250  => 180,    4750 => 202.50, 5250 => 225,    5750 => 247.50,
-            6250  => 270,    6750 => 292.50, 7250 => 315,    7750 => 337.50,
-            8250  => 360,    8750 => 382.50, 9250 => 405,    9750 => 427.50,
-            10250 => 450,   10750 => 472.50, 11250 => 495,  11750 => 517.50,
-            12250 => 540,   12750 => 562.50, 13250 => 585,  13750 => 607.50,
-            14250 => 630,   14750 => 652.50, 15250 => 675,  15750 => 697.50,
-            16250 => 720,   16750 => 742.50, 17250 => 765,  17750 => 787.50,
-            18250 => 810,   18750 => 832.50, 19250 => 855,  19750 => 877.50,
-        ];
+        if ($taxRate) {
+            $meta = is_array($taxRate->meta) ? $taxRate->meta : [];
+            foreach ((array) ($meta['brackets'] ?? []) as $bracket) {
+                $min = $bracket['min'] ?? 0;
+                $max = $bracket['max'] ?? null;
+                if (PayrollMoney::compare($income, $min) >= 0
+                    && ($max === null || PayrollMoney::compare($income, $max) <= 0)) {
+                    if (array_key_exists('employer_share', $bracket)) {
+                        return PayrollMoney::round($bracket['employer_share']);
+                    }
 
-        foreach ($table as $ceiling => $contribution) {
-            if ($income < $ceiling) {
-                return $contribution;
+                    break;
+                }
             }
         }
 
-        return 900;
+        return $this->calculateSssEmployerFallback($income, $runDate);
     }
 
-    protected function calculateWithholdingTaxFromConfiguredTrainRate(int $shopOwnerId, float $taxableIncome, Carbon $runDate): ?float
+    protected function calculatePhilHealthEmployerContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
+    {
+        $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_PHILHEALTH_EE', $runDate);
+
+        if ($taxRate) {
+            $meta = is_array($taxRate->meta) ? $taxRate->meta : [];
+            [$floor, $ceiling] = [
+                $meta['min_salary'] ?? 10000,
+                $meta['max_salary'] ?? 100000,
+            ];
+            $base = PayrollMoney::compare($income, $floor) < 0 ? $floor : $income;
+            $base = PayrollMoney::compare($base, $ceiling) > 0 ? $ceiling : $base;
+
+            return PayrollMoney::percent($base, $meta['employer_rate'] ?? $meta['employee_rate'] ?? $taxRate->rate ?? 0);
+        }
+
+        return $this->calculatePhilHealthContribution($shopOwnerId, $income, $runDate);
+    }
+
+    protected function calculatePagIbigEmployerContribution(int $shopOwnerId, mixed $income, Carbon $runDate): string
+    {
+        $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_PAGIBIG_EE', $runDate);
+        $meta = $taxRate && is_array($taxRate->meta) ? $taxRate->meta : [];
+        $maxSalary = $meta['max_salary'] ?? 5000;
+        $base = PayrollMoney::compare($income, $maxSalary) > 0 ? $maxSalary : PayrollMoney::maxZero($income);
+        $rate = $meta['employer_rate'] ?? 2;
+
+        return PayrollMoney::percent($base, $rate);
+    }
+
+    protected function calculateSssFallback(mixed $income, Carbon $runDate): string
+    {
+        $rules = $this->resolveSssFallbackRules($runDate);
+
+        return PayrollMoney::percent(
+            $this->resolveSssMscForRules($income, $rules),
+            $rules['employee_rate']
+        );
+    }
+
+    protected function resolveSssMsc(mixed $income): string
+    {
+        return $this->resolveSssMscForRules($income, $this->resolveSssFallbackRules(Carbon::parse('2025-01-01')));
+    }
+
+    protected function resolveSssMscForRules(mixed $income, array $rules): string
+    {
+        $msc = (int) $rules['min_msc'];
+
+        for ($candidate = $msc + 500; $candidate <= (int) $rules['max_msc']; $candidate += 500) {
+            if (PayrollMoney::compare($income, PayrollMoney::subtract($candidate, 250)) < 0) {
+                break;
+            }
+
+            $msc = $candidate;
+        }
+
+        return (string) $msc;
+    }
+
+    protected function resolveSssFallbackRules(Carbon $runDate): array
+    {
+        return match (true) {
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2025-01-01')) => [
+                'min_msc' => 5000,
+                'max_msc' => 35000,
+                'employee_rate' => '5',
+                'employer_rate' => '10',
+            ],
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2023-01-01')) => [
+                'min_msc' => 4000,
+                'max_msc' => 30000,
+                'employee_rate' => '4.5',
+                'employer_rate' => '9.5',
+            ],
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2021-01-01')) => [
+                'min_msc' => 3000,
+                'max_msc' => 25000,
+                'employee_rate' => '4.5',
+                'employer_rate' => '8.5',
+            ],
+            default => [
+                'min_msc' => 2000,
+                'max_msc' => 20000,
+                'employee_rate' => '4',
+                'employer_rate' => '8',
+            ],
+        };
+    }
+
+    protected function calculateSssEmployerFallback(mixed $income, Carbon $runDate): string
+    {
+        $rules = $this->resolveSssFallbackRules($runDate);
+        $msc = $this->resolveSssMscForRules($income, $rules);
+        $regular = PayrollMoney::percent(min((int) $msc, 20000), $rules['employer_rate']);
+        $mpf = PayrollMoney::percent(PayrollMoney::maxZero(PayrollMoney::subtract($msc, 20000)), $rules['employer_rate']);
+        $ecp = PayrollMoney::compare($msc, 15000) < 0 ? '10.00' : '30.00';
+
+        return PayrollMoney::add($regular, $mpf, $ecp);
+    }
+
+    protected function philHealthSalaryBounds(Carbon $runDate): array
+    {
+        return match (true) {
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2024-01-01')) => ['10000', '100000'],
+            // PhilHealth's planned 2023 increase was suspended; the official
+            // 2023 statement retained the 4% rate and ₱80,000 ceiling.
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2023-01-01')) => ['10000', '80000'],
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2022-01-01')) => ['10000', '80000'],
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2021-01-01')) => ['10000', '70000'],
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2020-01-01')) => ['10000', '60000'],
+            default => ['10000', '50000'],
+        };
+    }
+
+    protected function philHealthEmployeeRate(Carbon $runDate): string
+    {
+        return match (true) {
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2024-01-01')) => '2.5',
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2023-01-01')) => '2',
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2022-01-01')) => '2',
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2021-01-01')) => '1.75',
+            $runDate->greaterThanOrEqualTo(Carbon::parse('2020-01-01')) => '1.5',
+            default => '1.375',
+        };
+    }
+
+    protected function calculateOfficialMonthlyWithholdingTax(mixed $taxableIncome, Carbon $runDate): string
+    {
+        if ($runDate->lessThan(Carbon::parse('2023-01-01'))) {
+            return '0.00';
+        }
+
+        if (PayrollMoney::compare($taxableIncome, 20833) <= 0) {
+            return '0.00';
+        }
+
+        if (PayrollMoney::compare($taxableIncome, 33333) <= 0) {
+            return PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, 20833), '15');
+        }
+
+        if (PayrollMoney::compare($taxableIncome, 66667) <= 0) {
+            return PayrollMoney::add(1875, PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, 33333), '20'));
+        }
+
+        if (PayrollMoney::compare($taxableIncome, 166667) <= 0) {
+            return PayrollMoney::add(8541.80, PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, 66667), '25'));
+        }
+
+        if (PayrollMoney::compare($taxableIncome, 666667) <= 0) {
+            return PayrollMoney::add(33541.80, PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, 166667), '30'));
+        }
+
+        return PayrollMoney::add(183541.80, PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, 666667), '35'));
+    }
+
+    protected function calculateWithholdingTaxFromConfiguredTrainRate(int $shopOwnerId, mixed $taxableIncome, Carbon $runDate): ?string
     {
         $taxRate = $this->resolveEffectiveTaxRate($shopOwnerId, 'PAYROLL_WHT_TRAIN', $runDate);
 
@@ -939,24 +1230,28 @@ class PayrollService
 
         if (! is_array($brackets) || empty($brackets)) {
             if ($taxRate->type === 'fixed') {
-                return (float) ($taxRate->fixed_amount ?? 0);
+                return PayrollMoney::round($taxRate->fixed_amount ?? 0);
             }
 
-            return round(($taxableIncome * (float) $taxRate->rate) / 100, 2);
+            return PayrollMoney::percent($taxableIncome, $taxRate->rate ?? 0);
         }
 
         foreach ($brackets as $bracket) {
-            $min = (float) ($bracket['min'] ?? 0);
-            $max = isset($bracket['max']) ? (float) $bracket['max'] : null;
-            $fixed = (float) ($bracket['fixed'] ?? 0);
-            $rate = (float) ($bracket['rate'] ?? 0);
+            $min = $bracket['min'] ?? 0;
+            $max = $bracket['max'] ?? null;
+            $fixed = $bracket['fixed'] ?? 0;
+            $rate = $bracket['rate'] ?? 0;
 
-            if ($taxableIncome >= $min && ($max === null || $taxableIncome <= $max)) {
-                return round($fixed + (($taxableIncome - $min) * ($rate / 100)), 2);
+            if (PayrollMoney::compare($taxableIncome, $min) >= 0
+                && ($max === null || PayrollMoney::compare($taxableIncome, $max) <= 0)) {
+                return PayrollMoney::add(
+                    $fixed,
+                    PayrollMoney::percent(PayrollMoney::subtract($taxableIncome, $min), $rate)
+                );
             }
         }
 
-        return 0.0;
+        return '0.00';
     }
 
     protected function resolveEffectiveTaxRate(int $shopOwnerId, string $code, Carbon $runDate): ?TaxRate
@@ -1056,11 +1351,11 @@ class PayrollService
             throw new Exception('13th-month release is restricted to December unless explicitly overridden.');
         }
 
-        $employeeQuery = Employee::query()
-            ->forShopOwner($shopOwnerId)
-            ->where('status', 'active');
+        $employeeQuery = Employee::query()->forShopOwner($shopOwnerId);
 
-        if (! empty($employeeIds)) {
+        if (empty($employeeIds)) {
+            $employeeQuery->where('status', 'active');
+        } else {
             $employeeQuery->whereIn('id', $employeeIds);
         }
 
@@ -1385,22 +1680,49 @@ class PayrollService
      */
     public function recalculatePayroll(Payroll $payroll, array $overrides = []): Payroll
     {
-        // Delete existing components except manually added ones
-        $payroll->components()->where('is_recurring', true)->delete();
-        
-        // Regenerate with new overrides
-        return $this->generatePayroll(
-            $payroll->employee,
-            $payroll->pay_period_start . ' to ' . $payroll->pay_period_end,
-            [],
-            array_merge([
-                'attendance_days' => $payroll->attendance_days,
-                'leave_days' => $payroll->leave_days,
-                'overtime_hours' => $payroll->overtime_hours,
-                'payment_date' => $payroll->payment_date,
-                'payment_method' => $payroll->payment_method
-            ], $overrides)
-        );
+        if ($payroll->status !== 'pending' || $payroll->financialMutationLocked()) {
+            throw new Exception('Only pending payrolls without an approval lock can be recalculated.');
+        }
+
+        $customComponents = $payroll->components()
+            ->where('is_recurring', false)
+            ->whereNotIn('component_name', ['Income Tax'])
+            ->get()
+            ->map(static fn (PayrollComponent $component): array => [
+                'type' => $component->component_type,
+                'name' => $component->component_name,
+                'base_amount' => $component->base_amount ?? $component->amount ?? 0,
+                'method' => $component->calculation_method ?? PayrollComponent::METHOD_CUSTOM,
+                'taxable' => (bool) $component->is_taxable,
+                'recurring' => false,
+                'affects_gross' => (bool) ($component->affects_gross ?? true),
+                'category' => $component->category,
+                'description' => $component->description,
+            ])
+            ->all();
+
+        $employee = $payroll->employee;
+        $period = $payroll->pay_period_start . ' to ' . $payroll->pay_period_end;
+        $recalculationOverrides = array_merge([
+            'attendance_days' => $payroll->attendance_days,
+            'half_day_days' => data_get($payroll->calculation_snapshot, 'rules.half_day_days', 0),
+            'late_hours' => data_get($payroll->calculation_snapshot, 'rules.late_hours', 0),
+            'leave_days' => $payroll->leave_days,
+            'overtime_hours' => $payroll->overtime_hours,
+            'payment_date' => $payroll->payment_date,
+            'payment_method' => $payroll->payment_method,
+        ], $overrides);
+
+        return DB::transaction(function () use ($payroll, $employee, $period, $customComponents, $recalculationOverrides): Payroll {
+            $payroll->delete();
+
+            return $this->generatePayroll(
+                $employee,
+                $period,
+                $customComponents,
+                $recalculationOverrides
+            );
+        });
     }
     
     /**
@@ -1452,7 +1774,7 @@ class PayrollService
      */
     protected function logPayrollGeneration(Payroll $payroll, Employee $employee, int $componentCount): void
     {
-        if (!Auth::check()) return;
+        if (!Auth::guard('user')->check() && !Auth::guard('shop_owner')->check()) return;
         
         AuditLog::createLog([
             'shop_owner_id' => $payroll->shop_owner_id,
@@ -1481,27 +1803,15 @@ class PayrollService
      */
     public function validatePayroll(Payroll $payroll): array
     {
-        $issues = [];
-        
-        // Check if components exist
+        if (! $payroll->relationLoaded('components')) {
+            $payroll->load('components');
+        }
+
+        $issues = $payroll->reconciliationIssues();
         if ($payroll->components->isEmpty()) {
-            $issues[] = 'No payroll components found';
+            array_unshift($issues, 'No payroll components found');
         }
-        
-        // Verify calculations
-        $calculatedGross = $payroll->components
-            ->whereIn('component_type', [PayrollComponent::TYPE_EARNING, PayrollComponent::TYPE_BENEFIT])
-            ->sum('calculated_amount');
-            
-        if (abs($calculatedGross - $payroll->gross_salary) > 0.01) {
-            $issues[] = 'Gross salary mismatch: Expected ' . $calculatedGross . ', got ' . $payroll->gross_salary;
-        }
-        
-        // Check for negative values
-        if ($payroll->net_salary < 0) {
-            $issues[] = 'Negative net salary detected';
-        }
-        
+
         return $issues;
     }
 }

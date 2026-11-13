@@ -98,11 +98,13 @@ class CustomerReviewController extends Controller
             ]);
 
         // Merge and sort newest first
+        $reportedKeys = ReviewReport::reportedReviewKeys([$shopOwnerId]);
         $all = $productReviews
             ->concat($repairReviews)
             ->concat($shopReviews)
             ->sortByDesc('createdAt')
-            ->values();
+            ->values()
+            ->map(fn (array $item): array => [...$item, 'is_reported' => $reportedKeys->has($item['id'])]);
 
         // Aggregate stats (unfiltered totals for metric cards)
         $stats = [
@@ -168,7 +170,12 @@ class CustomerReviewController extends Controller
             ];
         } elseif ($type === 'repair') {
             $review = RepairReview::where('id', $reviewId)
-                ->where('shop_owner_id', $shopOwner->id)
+                ->where(function ($query) use ($shopOwner) {
+                    $query->where('shop_owner_id', $shopOwner->id)
+                        ->orWhereHas('repairRequest', function ($repairRequestQuery) use ($shopOwner) {
+                            $repairRequestQuery->where('shop_owner_id', $shopOwner->id);
+                        });
+                })
                 ->with('user:id,name,email')
                 ->first();
             if (!$review) {
@@ -202,18 +209,7 @@ class CustomerReviewController extends Controller
             ];
         }
 
-        // Prevent duplicate pending reports for the same review
-        $existing = ReviewReport::where('review_type', $type)
-            ->where('review_id', $reviewId)
-            ->where('shop_owner_id', $shopOwner->id)
-            ->whereNotIn('status', ['dismissed'])
-            ->first();
-
-        if ($existing) {
-            return response()->json(['error' => 'You have already reported this review.'], 409);
-        }
-
-        $report = ReviewReport::create([
+        $report = ReviewReport::createForReview($review, [
             'review_type'     => $type,
             'review_id'       => $reviewId,
             'shop_owner_id'   => $shopOwner->id,
@@ -232,13 +228,14 @@ class CustomerReviewController extends Controller
             type: NotificationType::REVIEW_REPORTED,
             title: 'Malicious Review Reported',
             message: "{$shopName} reported a customer review for: {$reasonLabel}",
-            actionUrl: '/superAdmin/flagged-accounts',
+            actionUrl: '/admin/flagged-accounts',
             data: ['review_report_id' => $report->id],
         );
 
         return response()->json([
             'message' => 'Review reported successfully. Our team will review it shortly.',
             'report'  => $report->only(['id', 'status']),
+            'is_reported' => true,
         ]);
     }
 }

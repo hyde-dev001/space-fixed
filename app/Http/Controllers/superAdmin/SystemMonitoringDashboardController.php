@@ -2,84 +2,105 @@
 
 namespace App\Http\Controllers\superAdmin;
 
+use App\Enums\AdminPage;
 use App\Http\Controllers\Controller;
-use App\Models\AuditLog;
 use App\Models\SuperAdmin;
 use App\Models\User;
+use App\Services\PrivilegedAuditVisibility;
+use App\Services\AdminPageAccessService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Activitylog\Models\Activity;
 
 class SystemMonitoringDashboardController extends Controller
 {
-    public function index(): Response
+    public function __construct(
+        private readonly PrivilegedAuditVisibility $auditVisibility,
+        private readonly AdminPageAccessService $pageAccess,
+    )
+    {
+    }
+
+    public function index(Request $request): Response
     {
         $now = now();
         $monthStart = $now->copy()->startOfMonth();
         $prevMonthStart = $now->copy()->subMonthNoOverflow()->startOfMonth();
         $prevMonthEnd = $now->copy()->subMonthNoOverflow()->endOfMonth();
 
-        $totalUsers = User::query()->count();
-        $totalAdmins = SuperAdmin::query()->count();
-        $suspendedAdmins = SuperAdmin::query()->where('status', 'suspended')->count();
+        $viewer = $request->user('super_admin');
+        $isSuperAdmin = $viewer instanceof SuperAdmin && $viewer->role === SuperAdmin::ROLE_SUPER_ADMIN;
+        $canViewUsers = $viewer instanceof SuperAdmin
+            && ($isSuperAdmin || $this->pageAccess->allows($viewer, AdminPage::USER_MANAGEMENT));
+        $canViewAudit = $viewer instanceof SuperAdmin
+            && ($isSuperAdmin || $this->pageAccess->allows($viewer, AdminPage::AUDIT_HISTORY));
 
-        $newUsersThisMonth = User::query()->whereBetween('created_at', [$monthStart, $now])->count();
-        $newUsersPrevMonth = User::query()->whereBetween('created_at', [$prevMonthStart, $prevMonthEnd])->count();
+        $totalUsers = $canViewUsers ? User::query()->count() : 0;
+        $totalAdmins = $isSuperAdmin ? SuperAdmin::query()->count() : 0;
+        $suspendedAdmins = $isSuperAdmin ? SuperAdmin::query()->where('status', 'suspended')->count() : 0;
 
-        $newAdminsThisMonth = SuperAdmin::query()
+        $newUsersThisMonth = $canViewUsers
+            ? User::query()->whereBetween('created_at', [$monthStart, $now])->count()
+            : 0;
+        $newUsersPrevMonth = $canViewUsers
+            ? User::query()->whereBetween('created_at', [$prevMonthStart, $prevMonthEnd])->count()
+            : 0;
+
+        $newAdminsThisMonth = $isSuperAdmin ? SuperAdmin::query()
             ->whereBetween('created_at', [$monthStart, $now])
-            ->count();
-        $newAdminsPrevMonth = SuperAdmin::query()
+            ->count() : 0;
+        $newAdminsPrevMonth = $isSuperAdmin ? SuperAdmin::query()
             ->whereBetween('created_at', [$prevMonthStart, $prevMonthEnd])
-            ->count();
+            ->count() : 0;
 
-        $newSuspendedThisMonth = SuperAdmin::query()
+        $newSuspendedThisMonth = $isSuperAdmin ? SuperAdmin::query()
             ->where('status', 'suspended')
             ->whereBetween('created_at', [$monthStart, $now])
-            ->count();
-        $newSuspendedPrevMonth = SuperAdmin::query()
+            ->count() : 0;
+        $newSuspendedPrevMonth = $isSuperAdmin ? SuperAdmin::query()
             ->where('status', 'suspended')
             ->whereBetween('created_at', [$prevMonthStart, $prevMonthEnd])
-            ->count();
+            ->count() : 0;
 
         $databaseHealthy = true;
-        try {
-            DB::connection()->getPdo();
-        } catch (\Throwable) {
-            $databaseHealthy = false;
+        if ($isSuperAdmin) {
+            try {
+                DB::connection()->getPdo();
+            } catch (\Throwable) {
+                $databaseHealthy = false;
+            }
         }
 
-        $failedJobsCount = Schema::hasTable('failed_jobs')
+        $failedJobsCount = $isSuperAdmin && Schema::hasTable('failed_jobs')
             ? (int) DB::table('failed_jobs')->count()
             : 0;
 
-        $activityRows = collect();
-        if (Schema::hasTable('audit_logs')) {
-            $activityRows = AuditLog::query()
-                ->select(['action', 'created_at'])
-                ->whereIn('target_type', ['user', 'super_admin'])
-                ->latest('created_at')
+        $activityRows = $canViewAudit && Schema::hasTable('activity_log')
+            ? $this->auditVisibility->visibleQuery($viewer)
+                ->with(['causer', 'subject'])
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->limit(5)
-                ->get();
-        } elseif (Schema::hasTable('activity_log')) {
-            $activityRows = DB::table('activity_log')
-                ->select(['description', 'created_at'])
-                ->where('description', 'not like', '%shop%')
-                ->where('description', 'not like', '%subscription%')
-                ->latest('created_at')
-                ->limit(5)
-                ->get();
-        }
+                ->get()
+            : collect();
 
-        $recentActivity = $activityRows->map(function ($row) {
-            $label = (string) ($row->action ?? $row->description ?? 'System activity recorded');
+        $recentActivity = $activityRows->map(function (Activity $row) use ($viewer) {
+            $safe = $viewer instanceof SuperAdmin
+                ? $this->auditVisibility->serialize($row, $viewer)
+                : null;
             $created = $row->created_at ? Carbon::parse($row->created_at) : null;
             return [
-                'activity' => str_replace('_', ' ', ucfirst($label)),
+                'activity' => $safe['event_label'] ?? 'System activity recorded',
                 'time' => $created ? $created->diffForHumans() : 'just now',
-                'status' => 'Info',
+                'status' => in_array($safe['event'] ?? null, [
+                    'privileged_capability_denied',
+                    'privileged_workflow_conflict',
+                    'privileged_workflow_failed',
+                ], true) ? 'Warning' : 'Info',
             ];
         })->all();
 
@@ -93,15 +114,19 @@ class SystemMonitoringDashboardController extends Controller
 
         return Inertia::render('superAdmin/SystemMonitoringDashboard', [
             'dashboard' => [
-                'metrics' => [
-                    'total_users' => $totalUsers,
-                    'total_admins' => $totalAdmins,
-                    'suspended_admins' => $suspendedAdmins,
-                    'total_users_change' => $this->percentChange($newUsersThisMonth, $newUsersPrevMonth),
-                    'total_admins_change' => $this->percentChange($newAdminsThisMonth, $newAdminsPrevMonth),
-                    'suspended_admins_change' => $this->percentChange($newSuspendedThisMonth, $newSuspendedPrevMonth),
-                ],
-                'system_health' => [
+                'metrics' => array_filter([
+                    ...($canViewUsers ? [
+                        'total_users' => $totalUsers,
+                        'total_users_change' => $this->percentChange($newUsersThisMonth, $newUsersPrevMonth),
+                    ] : []),
+                    ...($isSuperAdmin ? [
+                        'total_admins' => $totalAdmins,
+                        'suspended_admins' => $suspendedAdmins,
+                        'total_admins_change' => $this->percentChange($newAdminsThisMonth, $newAdminsPrevMonth),
+                        'suspended_admins_change' => $this->percentChange($newSuspendedThisMonth, $newSuspendedPrevMonth),
+                    ] : []),
+                ], static fn (mixed $value): bool => $value !== null),
+                'system_health' => $isSuperAdmin ? [
                     [
                         'metric' => 'Database Connectivity',
                         'value' => $databaseHealthy ? 'Connected' : 'Disconnected',
@@ -117,26 +142,28 @@ class SystemMonitoringDashboardController extends Controller
                         'value' => (string) $failedJobsCount,
                         'status' => $failedJobsCount > 0 ? 'Warning' : 'Low',
                     ],
-                ],
+                ] : [],
                 'recent_activity' => $recentActivity,
-                'performance_metrics' => [
+                'performance_metrics' => $isSuperAdmin ? [
                     [
                         'metric' => 'Total Admin Accounts',
                         'value' => (string) $totalAdmins,
-                        'status' => 'Live',
+                        'status' => 'Snapshot',
                     ],
                     [
                         'metric' => 'Suspended Admin Accounts',
                         'value' => (string) $suspendedAdmins,
-                        'status' => 'Live',
+                        'status' => 'Snapshot',
                     ],
                     [
                         'metric' => 'Failed Jobs',
                         'value' => (string) $failedJobsCount,
                         'status' => $failedJobsCount > 0 ? 'Warning' : 'Low',
                     ],
-                ],
-                'systems_operational' => $databaseHealthy,
+                ] : [],
+                'systems_operational' => $isSuperAdmin ? $databaseHealthy : null,
+                'can_view_audit' => $canViewAudit,
+                'can_view_system_health' => $isSuperAdmin,
             ],
         ]);
     }
